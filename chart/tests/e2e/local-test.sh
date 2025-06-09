@@ -77,55 +77,16 @@ start_minikube() {
 deploy_minio() {
     log_info "Deploying MinIO..."
 
-    # Add MinIO Helm repo
-    helm repo add minio https://charts.min.io/ 2>/dev/null || true
-    helm repo update
-
     # Create namespace
     kubectl create namespace minio 2>/dev/null || true
 
-    # Deploy MinIO using values file
-    helm upgrade --install minio minio/minio \
-        --namespace minio \
-        --values chart/tests/e2e/minio-values.yaml \
-        --wait --timeout=5m
+    # Deploy MinIO using direct YAML
+    kubectl apply -f chart/tests/e2e/minio.yaml -n minio
+
+    # Wait for deployment to be ready
+    kubectl wait --for=condition=available deployment/minio -n minio --timeout=300s
 
     log_success "MinIO deployed successfully"
-}
-
-setup_port_forward() {
-    log_info "Setting up port forwarding..."
-
-    # Kill existing port-forward if any
-    pkill -f "kubectl port-forward.*minio.*9000" 2>/dev/null || true
-
-    # Start port forward in background
-    kubectl port-forward -n minio svc/minio 9000:9000 &
-    sleep 5
-
-    # Test connection
-    if curl -f http://localhost:9000/minio/health/live >/dev/null 2>&1; then
-        log_success "MinIO is accessible at http://localhost:9000"
-    else
-        log_error "MinIO health check failed"
-        exit 1
-    fi
-}
-
-configure_aws_cli() {
-    log_info "Configuring AWS CLI for MinIO..."
-
-    aws configure set aws_access_key_id minioadmin
-    aws configure set aws_secret_access_key minioadmin123
-    aws configure set default.region us-east-1
-
-    # Test MinIO connection
-    if aws s3 ls --endpoint-url http://localhost:9000 >/dev/null 2>&1; then
-        log_success "AWS CLI configured successfully for MinIO"
-    else
-        log_error "Failed to configure AWS CLI for MinIO"
-        exit 1
-    fi
 }
 
 run_e2e_tests() {
@@ -140,19 +101,9 @@ run_e2e_tests() {
 
 cleanup() {
     log_info "Cleaning up..."
+    kubectl delete ns minio s3-housekeeping-e2e --force --grace-period=0 2>/dev/null || true
 
-    # Stop port-forward
-    pkill -f "kubectl port-forward.*minio.*9000" 2>/dev/null || true
-
-    # Cleanup helm releases
-    helm uninstall s3-housekeeping-e2e -n s3-housekeeping-e2e 2>/dev/null || true
-    helm uninstall minio -n minio 2>/dev/null || true
-
-    # Cleanup namespaces
-    kubectl delete namespace s3-housekeeping-e2e 2>/dev/null || true
-    kubectl delete namespace minio 2>/dev/null || true
-
-    log_success "Cleanup completed"
+    log_success "Basic cleanup completed"
 }
 
 main() {
@@ -165,8 +116,6 @@ main() {
     check_prerequisites
     start_minikube
     deploy_minio
-    setup_port_forward
-    configure_aws_cli
     run_e2e_tests
 
     log_success "Local E2E test completed successfully!"
@@ -182,8 +131,6 @@ case "${1:-}" in
         check_prerequisites
         start_minikube
         deploy_minio
-        setup_port_forward
-        configure_aws_cli
         log_success "Local E2E test environment setup completed!"
         exit 0
         ;;

@@ -6,8 +6,8 @@ multiBucket: true
 
 # Container image configuration
 image:
-  repository: amazonlinux
-  tag: "2023.4.20240319.1"
+  repository: ghcr.io/sn0rt/utils
+  tag: "utils-v0.0.2"
   pullPolicy: IfNotPresent
 
 
@@ -88,27 +88,23 @@ s3LifecycleConfigs:
       {
         "Rules": [
           {
-            "ID": "default-lifecycle",
+            "ID": "temp-cleanup",
             "Status": "Enabled",
             "Filter": {
-              "Prefix": ""
+              "Prefix": "temp/"
             },
-            "Transitions": [
-              {
-                "Days": 30,
-                "StorageClass": "STANDARD_IA"
-              },
-              {
-                "Days": 90,
-                "StorageClass": "GLACIER"
-              },
-              {
-                "Days": 365,
-                "StorageClass": "DEEP_ARCHIVE"
-              }
-            ],
             "Expiration": {
-              "Days": 2555
+              "Days": 7
+            }
+          },
+          {
+            "ID": "logs-cleanup",
+            "Status": "Enabled",
+            "Filter": {
+              "Prefix": "logs/"
+            },
+            "Expiration": {
+              "Days": 30
             }
           }
         ]
@@ -119,27 +115,13 @@ s3LifecycleConfigs:
       {
         "Rules": [
           {
-            "ID": "archive-lifecycle",
+            "ID": "archive-cleanup",
             "Status": "Enabled",
             "Filter": {
-              "Prefix": ""
+              "Prefix": "archive/"
             },
-            "Transitions": [
-              {
-                "Days": 30,
-                "StorageClass": "STANDARD_IA"
-              },
-              {
-                "Days": 90,
-                "StorageClass": "GLACIER"
-              },
-              {
-                "Days": 365,
-                "StorageClass": "DEEP_ARCHIVE"
-              }
-            ],
             "Expiration": {
-              "Days": 2555
+              "Days": 365
             }
           }
         ]

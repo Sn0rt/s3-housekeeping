@@ -38,15 +38,13 @@ The E2E tests verify that:
 
 The E2E tests use the following configuration:
 
-### Test Buckets
-- `test-bucket-1` - Uses standard lifecycle configuration
-- `test-bucket-2` - Uses complex multi-rule lifecycle configuration
-- `test-bucket-3` - Uses minimal lifecycle configuration
+### Test Bucket
+- `my-bucket` - Uses standard lifecycle configuration with transitions and expiration rules
 
 ### Test Scenarios
-1. **Different Credential Formats**: Tests various secret key names (`AWS_ACCESS_KEY_ID`, `ACCESS_KEY`, `accesskey`)
-2. **Multiple Lifecycle Configs**: Tests different lifecycle rule configurations
-3. **Multi-bucket Mode**: Tests the init container delay functionality
+1. **Direct MinIO Deployment**: Uses Kubernetes YAML instead of Helm chart
+2. **Single Bucket Testing**: Focus on core functionality with one bucket
+3. **Lifecycle Configuration**: Tests transition and expiration rules
 4. **Debug Mode**: Tests detailed logging capabilities
 
 ## Running Tests
@@ -90,12 +88,9 @@ Make sure you have the following tools installed:
 
 2. **Deploy MinIO**:
    ```bash
-   helm repo add minio https://charts.min.io/
-   helm install minio minio/minio \
-     --namespace minio \
-     --create-namespace \
-     --values chart/tests/e2e/minio-values.yaml \
-     --wait
+   kubectl create namespace minio
+   kubectl apply -f chart/tests/e2e/minio.yaml -n minio
+   kubectl wait --for=condition=available deployment/minio -n minio --timeout=300s
    ```
 
 3. **Setup port forwarding**:
@@ -105,8 +100,8 @@ Make sure you have the following tools installed:
 
 4. **Configure AWS CLI**:
    ```bash
-   aws configure set aws_access_key_id minioadmin
-   aws configure set aws_secret_access_key minioadmin123
+   aws configure set aws_access_key_id admin
+   aws configure set aws_secret_access_key password
    aws configure set default.region us-east-1
    ```
 

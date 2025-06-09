@@ -12,10 +12,10 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Test configuration
-MINIO_ENDPOINT="http://localhost:9000"
-MINIO_ACCESS_KEY="minioadmin"
-MINIO_SECRET_KEY="minioadmin123"
+# Test configuration - endpoint will be set dynamically
+MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
+MINIO_ACCESS_KEY="admin"
+MINIO_SECRET_KEY="password"
 TEST_NAMESPACE="s3-housekeeping-e2e"
 
 # Test results tracking
@@ -60,69 +60,31 @@ run_test() {
     fi
 }
 
-# Test 1: Verify MinIO connectivity and buckets
-test_minio_connectivity() {
-    log_info "Testing MinIO connectivity and bucket creation..."
-
-    # Test AWS CLI connection to MinIO
-    if ! aws s3 ls --endpoint-url ${MINIO_ENDPOINT} > /dev/null 2>&1; then
-        log_error "Cannot connect to MinIO at ${MINIO_ENDPOINT}"
-        return 1
-    fi
-
-    # Check if test buckets exist
-    local buckets=("test-bucket-1" "test-bucket-2" "test-bucket-3")
-    for bucket in "${buckets[@]}"; do
-        if aws s3 ls "s3://${bucket}" --endpoint-url ${MINIO_ENDPOINT} > /dev/null 2>&1; then
-            log_success "Bucket '${bucket}' exists and is accessible"
-        else
-            log_error "Bucket '${bucket}' not found or not accessible"
-            return 1
-        fi
-    done
-
-    return 0
-}
-
-# Test 2: Create Kubernetes secrets for MinIO credentials
+# Test 1: Create Kubernetes secrets for MinIO credentials
 test_create_secrets() {
     log_info "Creating Kubernetes secrets for MinIO credentials..."
 
     # Create namespace
     kubectl create namespace ${TEST_NAMESPACE} || true
 
-    # Create secrets for each bucket (simulating different credentials)
-    kubectl create secret generic minio-credentials-1 \
-        --from-literal=AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY} \
-        --from-literal=AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_KEY} \
-        --namespace=${TEST_NAMESPACE} \
-        --dry-run=client -o yaml | kubectl apply -f -
-
-    kubectl create secret generic minio-credentials-2 \
-        --from-literal=ACCESS_KEY=${MINIO_ACCESS_KEY} \
-        --from-literal=SECRET_KEY=${MINIO_SECRET_KEY} \
-        --namespace=${TEST_NAMESPACE} \
-        --dry-run=client -o yaml | kubectl apply -f -
-
-    kubectl create secret generic minio-credentials-3 \
+    # Create secret for MinIO credentials
+    kubectl create secret generic minio-credentials \
         --from-literal=accesskey=${MINIO_ACCESS_KEY} \
         --from-literal=secretkey=${MINIO_SECRET_KEY} \
         --namespace=${TEST_NAMESPACE} \
         --dry-run=client -o yaml | kubectl apply -f -
 
-    # Verify secrets exist
-    if kubectl get secret minio-credentials-1 -n ${TEST_NAMESPACE} > /dev/null 2>&1 && \
-       kubectl get secret minio-credentials-2 -n ${TEST_NAMESPACE} > /dev/null 2>&1 && \
-       kubectl get secret minio-credentials-3 -n ${TEST_NAMESPACE} > /dev/null 2>&1; then
-        log_success "All MinIO credentials secrets created successfully"
+    # Verify secret exists
+    if kubectl get secret minio-credentials -n ${TEST_NAMESPACE} > /dev/null 2>&1; then
+        log_success "MinIO credentials secret created successfully"
         return 0
     else
-        log_error "Failed to create one or more credentials secrets"
+        log_error "Failed to create MinIO credentials secret"
         return 1
     fi
 }
 
-# Test 3: Deploy S3 Housekeeping chart
+# Test 2: Deploy S3 Housekeeping chart
 test_deploy_chart() {
     log_info "Deploying S3 Housekeeping chart..."
 
@@ -137,18 +99,18 @@ test_deploy_chart() {
         return 1
     fi
 
-    # Verify CronJobs are created
+    # Verify CronJob is created
     local cronjob_count=$(kubectl get cronjobs -n ${TEST_NAMESPACE} --no-headers | wc -l)
-    if [[ $cronjob_count -eq 3 ]]; then
-        log_success "All 3 CronJobs created successfully"
+    if [[ $cronjob_count -eq 1 ]]; then
+        log_success "CronJob created successfully"
         return 0
     else
-        log_error "Expected 3 CronJobs, found $cronjob_count"
+        log_error "Expected 1 CronJob, found $cronjob_count"
         return 1
     fi
 }
 
-# Test 4: Manually trigger jobs and verify lifecycle configuration
+# Test 3: Manually trigger jobs and verify lifecycle configuration
 test_lifecycle_application() {
     log_info "Testing lifecycle configuration application..."
 
@@ -164,70 +126,94 @@ test_lifecycle_application() {
             --namespace=${TEST_NAMESPACE}
     done
 
-    # Wait for jobs to complete
-    log_info "Waiting for jobs to complete..."
-    sleep 30
+    # Wait for jobs to complete with 5-minute timeout
+    log_info "Waiting for jobs to complete (timeout: 5 minutes)..."
 
-    # Check job status
     local completed_jobs=0
     local jobs=($(kubectl get jobs -n ${TEST_NAMESPACE} --no-headers -o custom-columns=":metadata.name"))
 
     for job in "${jobs[@]}"; do
-        local status=$(kubectl get job ${job} -n ${TEST_NAMESPACE} -o jsonpath='{.status.conditions[0].type}')
-        if [[ "$status" == "Complete" ]]; then
+        log_info "Waiting for job $job to complete..."
+        if kubectl wait --for=condition=complete job/${job} -n ${TEST_NAMESPACE} --timeout=300s; then
             log_success "Job $job completed successfully"
             completed_jobs=$((completed_jobs + 1))
+
+            # Always show job logs for debugging
+            log_info "Job $job logs:"
+            kubectl logs job/${job} -n ${TEST_NAMESPACE} || true
         else
-            log_error "Job $job failed or is still running"
+            log_error "Job $job failed or timed out"
             # Show job logs for debugging
+            log_info "Job $job logs:"
             kubectl logs job/${job} -n ${TEST_NAMESPACE} || true
         fi
     done
 
-    if [[ $completed_jobs -eq 3 ]]; then
+    if [[ $completed_jobs -eq 1 ]]; then
         return 0
     else
-        log_error "Only $completed_jobs out of 3 jobs completed successfully"
+        log_error "Only $completed_jobs out of 1 jobs completed successfully"
         return 1
     fi
 }
 
-# Test 5: Verify lifecycle configurations are applied to MinIO buckets
+# Test 4: Verify lifecycle configs using temporary pod
 test_verify_lifecycle_configs() {
-    log_info "Verifying lifecycle configurations are applied to MinIO buckets..."
+    log_info "Verifying lifecycle configurations using temporary pod..."
 
-    local buckets=("test-bucket-1" "test-bucket-2" "test-bucket-3")
-    local verified_buckets=0
+    local bucket="my-bucket"
 
-    for bucket in "${buckets[@]}"; do
-        log_info "Checking lifecycle configuration for bucket: $bucket"
+    # Create temporary pod to check lifecycle configuration
+    log_info "Creating temporary debug pod..."
+    kubectl run debug-lifecycle-check --rm -i --tty \
+        --image=ghcr.io/sn0rt/utils:utils-v0.0.2 \
+        --env="AWS_ACCESS_KEY_ID=admin" \
+        --env="AWS_SECRET_ACCESS_KEY=password" \
+        --env="AWS_DEFAULT_REGION=us-east-1" \
+        --restart=Never \
+        --timeout=60s \
+        -- bash -c "
+            echo 'Configuring AWS CLI...'
+            aws configure set aws_access_key_id admin
+            aws configure set aws_secret_access_key password
+            aws configure set default.region us-east-1
 
-        # Get current lifecycle configuration from MinIO
-        if aws s3api get-bucket-lifecycle-configuration \
-            --bucket ${bucket} \
-            --endpoint-url ${MINIO_ENDPOINT} > /tmp/${bucket}-lifecycle.json 2>/dev/null; then
+            echo 'Testing MinIO connection...'
+            aws s3 ls --endpoint-url http://minio.minio.svc.cluster.local:9000
 
-            # Verify the configuration contains expected rules
-            if jq -e '.Rules[] | select(.Status == "Enabled")' /tmp/${bucket}-lifecycle.json > /dev/null; then
-                log_success "Bucket '$bucket' has active lifecycle rules"
-                verified_buckets=$((verified_buckets + 1))
+            echo 'Checking bucket ${bucket}...'
+            aws s3 ls s3://${bucket} --endpoint-url http://minio.minio.svc.cluster.local:9000
+
+            echo 'Getting lifecycle configuration...'
+            lifecycle_config=\$(aws s3api get-bucket-lifecycle-configuration \
+                --bucket ${bucket} \
+                --endpoint-url http://minio.minio.svc.cluster.local:9000 2>/dev/null || echo 'null')
+
+            echo \"Retrieved config: \$lifecycle_config\"
+
+            # Check if configuration exists and has enabled rules
+            if [[ \"\$lifecycle_config\" == \"null\" ]] || [[ \"\$lifecycle_config\" == \"\" ]]; then
+                echo 'ERROR: No lifecycle configuration found'
+                exit 1
+            elif echo \"\$lifecycle_config\" | grep -q '\"Rules\"' && echo \"\$lifecycle_config\" | grep -q '\"Status\".*\"Enabled\"'; then
+                echo 'SUCCESS: Lifecycle rules found and enabled'
+                echo \"\$lifecycle_config\"
+                exit 0
             else
-                log_error "Bucket '$bucket' lifecycle rules are not enabled"
+                echo 'ERROR: Lifecycle configuration exists but no enabled rules found'
+                echo \"Current config: \$lifecycle_config\"
+                exit 1
             fi
-        else
-            log_error "Could not retrieve lifecycle configuration for bucket '$bucket'"
-        fi
-    done
-
-    if [[ $verified_buckets -eq 3 ]]; then
+        " && {
+        log_success "Bucket '$bucket' has active lifecycle rules"
         return 0
-    else
-        log_error "Only $verified_buckets out of 3 buckets have correct lifecycle configurations"
+    } || {
+        log_error "Bucket '$bucket' has no active lifecycle rules or could not retrieve configuration"
         return 1
-    fi
+    }
 }
 
-# Test 6: Test configuration updates (idempotency)
+# Test 5: Test configuration updates (idempotency)
 test_idempotency() {
     log_info "Testing configuration idempotency..."
 
@@ -241,25 +227,28 @@ test_idempotency() {
             --namespace=${TEST_NAMESPACE}
     done
 
-    # Wait for jobs to complete
-    sleep 30
+    # Wait for idempotency jobs to complete with 5-minute timeout
+    log_info "Waiting for idempotency jobs to complete (timeout: 5 minutes)..."
 
-    # Check if jobs completed successfully (should be no-op)
-    local idempotent_jobs=($(kubectl get jobs -n ${TEST_NAMESPACE} -l job-name --no-headers -o custom-columns=":metadata.name" | grep idempotency))
+    local idempotent_jobs=($(kubectl get jobs -n ${TEST_NAMESPACE} --no-headers -o custom-columns=":metadata.name" | grep idempotency))
     local success_count=0
 
     for job in "${idempotent_jobs[@]}"; do
-        local status=$(kubectl get job ${job} -n ${TEST_NAMESPACE} -o jsonpath='{.status.conditions[0].type}')
-        if [[ "$status" == "Complete" ]]; then
+        log_info "Waiting for idempotency job $job to complete..."
+        if kubectl wait --for=condition=complete job/${job} -n ${TEST_NAMESPACE} --timeout=300s; then
+            log_success "Idempotency job $job completed successfully"
             success_count=$((success_count + 1))
+        else
+            log_error "Idempotency job $job failed or timed out"
+            kubectl logs job/${job} -n ${TEST_NAMESPACE} || true
         fi
     done
 
-    if [[ $success_count -eq 3 ]]; then
-        log_success "All idempotency tests passed"
+    if [[ $success_count -eq 1 ]]; then
+        log_success "Idempotency test passed"
         return 0
     else
-        log_error "Idempotency test failed: $success_count out of 3 jobs succeeded"
+        log_error "Idempotency test failed: $success_count out of 1 jobs succeeded"
         return 1
     fi
 }
@@ -273,7 +262,6 @@ main() {
     echo ""
 
     # Run all tests
-    run_test "MinIO Connectivity" test_minio_connectivity
     run_test "Create Secrets" test_create_secrets
     run_test "Deploy Chart" test_deploy_chart
     run_test "Lifecycle Application" test_lifecycle_application

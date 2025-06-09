@@ -34,14 +34,28 @@ spec:
             - -c
             - |
               echo "Multi-cluster deployment detected, applying random delay to avoid conflicts..."
-              # Generate random delay between 60-120 seconds
-              delay=$((60 + RANDOM % 61))
-              echo "Applying random delay: ${delay} seconds (range: 60-120s)"
+              # Generate random delay between 5-50 seconds
+              delay=$((5 + RANDOM % 46))
+              echo "Applying random delay: ${delay} seconds (range: 5-50s)"
               echo "Bucket: {{ $bucket.name }}"
               echo "Start time: $(date)"
               sleep ${delay}
               echo "Delay completed at: $(date)"
               echo "Proceeding to main container..."
+            command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Checking required tools..."
+              if ! command -v aws &> /dev/null; then
+                echo "Error: aws CLI not found"
+                exit 1
+              fi
+              if ! command -v jq &> /dev/null; then
+                echo "Error: jq not found"
+                exit 1
+              fi
+              echo "Required tools check passed"
             resources:
               limits:
                 cpu: 50m
@@ -59,10 +73,7 @@ spec:
             - -c
             - |
               # Execute single bucket script
-              chmod +x /scripts/s3-lifecycle-check-single.sh
-              /scripts/s3-lifecycle-check-single.sh "$@"
-            args:
-            - "/lifecycle-configs/{{ $bucket.lifecycleConfigName }}.json"
+              /scripts/s3-lifecycle-check-single.sh "/lifecycle-configs/{{ $bucket.lifecycleConfigName }}.json"
             env:
             # Static configuration (always from values)
             - name: S3_BUCKET_NAME

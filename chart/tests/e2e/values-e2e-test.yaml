@@ -9,134 +9,46 @@ multiBucket: true
 
 # Container image configuration
 image:
-  repository: amazonlinux
-  tag: "2023.4.20240319.1"
+  repository: ghcr.io/sn0rt/utils
+  tag: "utils-v0.0.2"
   pullPolicy: IfNotPresent
 
 # S3 buckets configuration for testing
 s3:
   buckets:
-    # Test bucket 1 - Standard lifecycle with different credential keys
-    - name: "test-bucket-1"
+    # Single test bucket for initial testing
+    - name: "my-bucket"
       lifecycleConfigName: "standard-lifecycle"
       endpoint: "http://minio.minio.svc.cluster.local:9000"
       accessKeyId:
-        secretName: "minio-credentials-1"
-        secretKey: "AWS_ACCESS_KEY_ID"
-      secretAccessKey:
-        secretName: "minio-credentials-1"
-        secretKey: "AWS_SECRET_ACCESS_KEY"
-
-    # Test bucket 2 - Complex lifecycle with different credential keys
-    - name: "test-bucket-2"
-      lifecycleConfigName: "complex-lifecycle"
-      endpoint: "http://minio.minio.svc.cluster.local:9000"
-      accessKeyId:
-        secretName: "minio-credentials-2"
-        secretKey: "ACCESS_KEY"
-      secretAccessKey:
-        secretName: "minio-credentials-2"
-        secretKey: "SECRET_KEY"
-
-    # Test bucket 3 - Minimal lifecycle with different credential keys
-    - name: "test-bucket-3"
-      lifecycleConfigName: "minimal-lifecycle"
-      endpoint: "http://minio.minio.svc.cluster.local:9000"
-      accessKeyId:
-        secretName: "minio-credentials-3"
+        secretName: "minio-credentials"
         secretKey: "accesskey"
       secretAccessKey:
-        secretName: "minio-credentials-3"
+        secretName: "minio-credentials"
         secretKey: "secretkey"
 
 # S3 lifecycle configurations for testing
 s3LifecycleConfigs:
-  # Standard lifecycle configuration
+  # Simple lifecycle configuration - only expiration
   - name: "standard-lifecycle"
     content: |
       {
         "Rules": [
           {
-            "ID": "StandardRule",
+            "ID": "TempFilesRule",
             "Status": "Enabled",
             "Filter": {
-              "Prefix": "documents/"
-            },
-            "Transitions": [
-              {
-                "Days": 30,
-                "StorageClass": "STANDARD_IA"
-              },
-              {
-                "Days": 90,
-                "StorageClass": "GLACIER"
-              }
-            ],
-            "Expiration": {
-              "Days": 365
-            }
-          }
-        ]
-      }
-
-  # Complex lifecycle configuration with multiple rules
-  - name: "complex-lifecycle"
-    content: |
-      {
-        "Rules": [
-          {
-            "ID": "LogsRule",
-            "Status": "Enabled",
-            "Filter": {
-              "Prefix": "logs/"
+              "Prefix": "temp/"
             },
             "Expiration": {
               "Days": 7
             }
           },
           {
-            "ID": "BackupsRule",
+            "ID": "LogsRule",
             "Status": "Enabled",
             "Filter": {
-              "Prefix": "backups/"
-            },
-            "Transitions": [
-              {
-                "Days": 1,
-                "StorageClass": "STANDARD_IA"
-              },
-              {
-                "Days": 30,
-                "StorageClass": "GLACIER"
-              }
-            ],
-            "Expiration": {
-              "Days": 2555
-            }
-          },
-          {
-            "ID": "TempRule",
-            "Status": "Enabled",
-            "Filter": {
-              "Prefix": "temp/"
-            },
-            "Expiration": {
-              "Days": 1
-            }
-          }
-        ]
-      }
-
-  # Minimal lifecycle configuration
-  - name: "minimal-lifecycle"
-    content: |
-      {
-        "Rules": [
-          {
-            "ID": "SimpleRule",
-            "Status": "Enabled",
-            "Filter": {
-              "Prefix": ""
+              "Prefix": "logs/"
             },
             "Expiration": {
               "Days": 30

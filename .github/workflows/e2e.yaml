@@ -41,32 +41,32 @@ jobs:
 
     - name: Deploy MinIO
       run: |
-        # Deploy MinIO using Helm
-        helm repo add minio https://charts.min.io/
-        helm repo update
-
         # Create namespace
         kubectl create namespace minio || true
 
-        # Deploy MinIO with custom values
-        helm install minio minio/minio \
-          --namespace minio \
-          --values chart/tests/e2e/minio-values.yaml \
-          --wait --timeout=5m
+        # Deploy MinIO using direct YAML
+        kubectl apply -f chart/tests/e2e/minio.yaml -n minio
+
+        # Wait for deployment to be ready
+        kubectl wait --for=condition=available deployment/minio -n minio --timeout=300s
 
     - name: Wait for MinIO to be ready
       run: |
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=minio -n minio --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=minio -n minio --timeout=300s
         kubectl get pods -n minio
 
-    - name: Setup MinIO port-forward
+    - name: Verify MinIO access
       run: |
-        # Port forward MinIO service
-        kubectl port-forward -n minio svc/minio 9000:9000 &
-        sleep 10
+        # Get MinIO NodePort
+        MINIO_PORT=$(kubectl get svc minio -n minio -o jsonpath='{.spec.ports[0].nodePort}')
+        MINIO_URL="http://localhost:${MINIO_PORT}"
+        echo "MinIO URL: ${MINIO_URL}"
 
         # Verify MinIO is accessible
-        curl -f http://localhost:9000/minio/health/live || (echo "MinIO health check failed" && exit 1)
+        curl -f ${MINIO_URL}/minio/health/live || (echo "MinIO health check failed" && exit 1)
+
+        # Export for subsequent steps
+        echo "MINIO_ENDPOINT=${MINIO_URL}" >> $GITHUB_ENV
 
     - name: Install AWS CLI
       run: |
@@ -76,12 +76,12 @@ jobs:
 
     - name: Configure AWS CLI for MinIO
       run: |
-        aws configure set aws_access_key_id minioadmin
-        aws configure set aws_secret_access_key minioadmin123
+        aws configure set aws_access_key_id admin
+        aws configure set aws_secret_access_key password
         aws configure set default.region us-east-1
 
         # Test MinIO connection
-        aws s3 ls --endpoint-url http://localhost:9000
+        aws s3 ls --endpoint-url $MINIO_ENDPOINT
 
     - name: Run E2E tests
       run: |
@@ -92,7 +92,7 @@ jobs:
       if: failure()
       run: |
         echo "=== MinIO Logs ==="
-        kubectl logs -n minio -l app.kubernetes.io/name=minio --tail=100
+        kubectl logs -n minio -l app=minio --tail=100
 
         echo "=== S3 Housekeeping Logs ==="
         kubectl logs -l app.kubernetes.io/name=s3-housekeeping --tail=100 || echo "No s3-housekeeping pods found"
