@@ -3,6 +3,22 @@
 # Script for checking S3 object lifecycle for a single bucket
 # This script is designed to be used with one bucket per CronJob
 # Usage: s3-lifecycle-check-single.sh <lifecycle-config-file-path>
+#
+# Environment Variables:
+#   Required:
+#     S3_BUCKET_NAME         - Name of the S3 bucket to manage
+#     AWS_ACCESS_KEY_ID      - AWS access key ID
+#     AWS_SECRET_ACCESS_KEY  - AWS secret access key
+#     S3_ENDPOINT            - S3 endpoint URL
+#   Optional:
+#     DEBUG                  - Enable debug mode (true/false, default: false)
+#     S3_CA_BUNDLE          - Path to CA certificate bundle
+#     SKIP_OBJECT_LISTING   - Skip object counting for performance (true/false, default: false)
+#
+# Performance Notes:
+#   - Object counting is optimized to sample max 1000 objects for performance
+#   - For buckets with 1000+ objects, only a sample count is shown
+#   - Set SKIP_OBJECT_LISTING=true to completely skip object listing for maximum performance
 
 set -euo pipefail
 
@@ -199,17 +215,58 @@ fi
 echo ""
 echo "Listing objects in bucket..."
 
-# List objects and get count
-object_count=$(aws s3 ls "s3://${S3_BUCKET_NAME}" --recursive ${aws_cli_opts} | wc -l)
-
-echo "Total objects in bucket: ${object_count}"
-
-if [[ "$object_count" -eq 0 ]]; then
-    echo "INFO: Bucket is empty - no objects to check"
+# Check if object listing should be skipped for maximum performance
+if [[ "${SKIP_OBJECT_LISTING:-false}" == "true" ]]; then
+    echo "INFO: Object listing skipped for performance (SKIP_OBJECT_LISTING=true)"
+    object_count="SKIPPED"
 else
-    echo ""
-    echo "Sample objects (first 10):"
-    aws s3 ls "s3://${S3_BUCKET_NAME}" --recursive ${aws_cli_opts} | head -10
+    # Get object count more efficiently using list-objects-v2 with pagination
+    # This avoids downloading all object metadata
+    log_info() {
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+    }
+
+    log_info "Getting object count for bucket ${S3_BUCKET_NAME}..."
+
+    # Use a more efficient method to get object count
+    # Method 1: Use list-objects-v2 with max-items to get a quick sample
+    sample_count=$(aws s3api list-objects-v2 \
+        --bucket "${S3_BUCKET_NAME}" \
+        --max-items 1000 \
+        ${aws_cli_opts} \
+        --query 'length(Contents)' \
+        --output text 2>/dev/null || echo "0")
+
+    if [[ "$sample_count" == "1000" ]]; then
+        # If we hit the limit, the bucket likely has many objects
+        echo "Bucket contains 1000+ objects (sampling shows significant content)"
+        echo "INFO: Skipping full object count for performance reasons"
+        object_count="1000+"
+        show_sample=true
+    else
+        # For smaller buckets, show the actual count
+        object_count="$sample_count"
+        show_sample=false
+    fi
+
+    echo "Object count (sample): ${object_count}"
+
+    if [[ "$show_sample" == "true" ]]; then
+        echo ""
+        echo "Sample objects (first 10):"
+        aws s3api list-objects-v2 \
+            --bucket "${S3_BUCKET_NAME}" \
+            --max-items 10 \
+            ${aws_cli_opts} \
+            --query 'Contents[].{Key:Key,Size:Size,LastModified:LastModified}' \
+            --output table 2>/dev/null || echo "Could not retrieve sample objects"
+    elif [[ "$object_count" != "0" ]]; then
+        echo ""
+        echo "Sample objects (first 10):"
+        aws s3 ls "s3://${S3_BUCKET_NAME}" ${aws_cli_opts} | head -10
+    else
+        echo "INFO: Bucket is empty - no objects to check"
+    fi
 fi
 
 echo ""

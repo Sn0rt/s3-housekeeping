@@ -101,8 +101,6 @@ run_e2e_tests() {
 
 cleanup() {
     log_info "Cleaning up..."
-    kubectl delete ns minio s3-housekeeping-e2e --force --grace-period=0 2>/dev/null || true
-
     log_success "Basic cleanup completed"
 }
 

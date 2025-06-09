@@ -11,40 +11,40 @@ jobs:
   e2e-test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      matrix:
+        test-mode:
+          - name: "Multi-Bucket"
+            use_multi_bucket: true
+            description: "4 buckets with individual CronJobs"
+          - name: "Single-Bucket"
+            use_multi_bucket: false
+            description: "1 bucket for compatibility testing"
+      fail-fast: false
+
+    name: E2E Tests (${{ matrix.test-mode.name }})
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Setup Helm
-      uses: azure/setup-helm@v3
-      with:
-        version: 'v3.12.0'
-
-    - name: Setup kubectl
-      uses: azure/setup-kubectl@v3
-      with:
-        version: 'v1.28.0'
+      uses: azure/setup-helm@v4
 
     - name: Start minikube
-      uses: medyagh/setup-minikube@master
-      with:
-        minikube-version: 'v1.32.0'
-        kubernetes-version: 'v1.28.0'
-        driver: docker
-        start-args: '--memory=4096 --cpus=2'
+      uses: medyagh/setup-minikube@latest
 
     - name: Verify minikube
       run: |
         kubectl cluster-info
-        kubectl get nodes
+        kubectl get pods -A
 
     - name: Deploy MinIO
       run: |
         # Create namespace
         kubectl create namespace minio || true
 
-        # Deploy MinIO using direct YAML
+        # Deploy MinIO using direct YAML (supports multiple buckets)
         kubectl apply -f chart/tests/e2e/minio.yaml -n minio
 
         # Wait for deployment to be ready
@@ -55,50 +55,50 @@ jobs:
         kubectl wait --for=condition=ready pod -l app=minio -n minio --timeout=300s
         kubectl get pods -n minio
 
-    - name: Verify MinIO access
+    - name: Run E2E tests (${{ matrix.test-mode.name }})
       run: |
-        # Get MinIO NodePort
-        MINIO_PORT=$(kubectl get svc minio -n minio -o jsonpath='{.spec.ports[0].nodePort}')
-        MINIO_URL="http://localhost:${MINIO_PORT}"
-        echo "MinIO URL: ${MINIO_URL}"
+        # Set test mode
+        export USE_MULTI_BUCKET=${{ matrix.test-mode.use_multi_bucket }}
+        export SKIP_OBJECT_LISTING=true  # Enable performance optimization for CI
 
-        # Verify MinIO is accessible
-        curl -f ${MINIO_URL}/minio/health/live || (echo "MinIO health check failed" && exit 1)
-
-        # Export for subsequent steps
-        echo "MINIO_ENDPOINT=${MINIO_URL}" >> $GITHUB_ENV
-
-    - name: Install AWS CLI
-      run: |
-        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-        unzip awscliv2.zip
-        sudo ./aws/install
-
-    - name: Configure AWS CLI for MinIO
-      run: |
-        aws configure set aws_access_key_id admin
-        aws configure set aws_secret_access_key password
-        aws configure set default.region us-east-1
-
-        # Test MinIO connection
-        aws s3 ls --endpoint-url $MINIO_ENDPOINT
-
-    - name: Run E2E tests
-      run: |
         chmod +x chart/tests/e2e/run-e2e-tests.sh
+
+        echo "🚀 Running ${{ matrix.test-mode.name }} E2E Tests"
+        echo "Description: ${{ matrix.test-mode.description }}"
+        echo "USE_MULTI_BUCKET=${USE_MULTI_BUCKET}"
+        echo ""
+
         chart/tests/e2e/run-e2e-tests.sh
 
     - name: Collect logs on failure
       if: failure()
       run: |
+        echo "=== Test Configuration ==="
+        echo "Test Mode: ${{ matrix.test-mode.name }}"
+        echo "USE_MULTI_BUCKET: ${{ matrix.test-mode.use_multi_bucket }}"
+        echo ""
+
+        echo "=== MinIO Service ==="
+        minikube service list
+        minikube service minio -n minio --url || echo "MinIO service not accessible"
+
         echo "=== MinIO Logs ==="
         kubectl logs -n minio -l app=minio --tail=100
 
+        echo "=== S3 Housekeeping CronJobs ==="
+        kubectl get cronjobs -n s3-housekeeping-e2e -o wide || echo "No cronjobs found"
+
+        echo "=== S3 Housekeeping Jobs ==="
+        kubectl get jobs -n s3-housekeeping-e2e -o wide || echo "No jobs found"
+
         echo "=== S3 Housekeeping Logs ==="
-        kubectl logs -l app.kubernetes.io/name=s3-housekeeping --tail=100 || echo "No s3-housekeeping pods found"
+        kubectl logs -n s3-housekeeping-e2e -l app.kubernetes.io/name=s3-housekeeping --tail=100 || echo "No s3-housekeeping pods found"
 
         echo "=== All Pods ==="
         kubectl get pods -A
+
+        echo "=== ConfigMaps ==="
+        kubectl get configmaps -n s3-housekeeping-e2e || echo "No configmaps found"
 
         echo "=== Events ==="
         kubectl get events --sort-by=.metadata.creationTimestamp

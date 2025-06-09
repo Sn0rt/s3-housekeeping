@@ -1,0 +1,211 @@
+# Multi-Bucket E2E Test Values for S3 Housekeeping with MinIO
+# This configuration tests multiple buckets with individual CronJobs
+
+# Enable debug mode for detailed logging
+debug: true
+
+# Enable multi-bucket mode to test per-bucket CronJob functionality
+multiBucket: true
+
+# Container image configuration
+image:
+  repository: ghcr.io/sn0rt/utils
+  tag: "utils-v0.0.2"
+  pullPolicy: IfNotPresent
+
+# S3 buckets configuration for testing - multiple buckets
+s3:
+  buckets:
+    # Production bucket with standard lifecycle
+    - name: "test-bucket-1"
+      lifecycleConfigName: "production-lifecycle"
+      endpoint: "http://minio.minio.svc.cluster.local:9000"
+      accessKeyId:
+        secretName: "minio-credentials"
+        secretKey: "accesskey"
+      secretAccessKey:
+        secretName: "minio-credentials"
+        secretKey: "secretkey"
+
+    # Archive bucket with long-term retention
+    - name: "test-bucket-2"
+      lifecycleConfigName: "archive-lifecycle"
+      endpoint: "http://minio.minio.svc.cluster.local:9000"
+      accessKeyId:
+        secretName: "minio-credentials"
+        secretKey: "accesskey"
+      secretAccessKey:
+        secretName: "minio-credentials"
+        secretKey: "secretkey"
+
+    # Logs bucket with aggressive cleanup
+    - name: "logs-bucket"
+      lifecycleConfigName: "logs-lifecycle"
+      endpoint: "http://minio.minio.svc.cluster.local:9000"
+      accessKeyId:
+        secretName: "minio-credentials"
+        secretKey: "accesskey"
+      secretAccessKey:
+        secretName: "minio-credentials"
+        secretKey: "secretkey"
+
+    # Keep original bucket for compatibility
+    - name: "my-bucket"
+      lifecycleConfigName: "standard-lifecycle"
+      endpoint: "http://minio.minio.svc.cluster.local:9000"
+      accessKeyId:
+        secretName: "minio-credentials"
+        secretKey: "accesskey"
+      secretAccessKey:
+        secretName: "minio-credentials"
+        secretKey: "secretkey"
+
+# S3 lifecycle configurations for testing - different configs per bucket
+s3LifecycleConfigs:
+  # Production bucket - standard business rules
+  - name: "production-lifecycle"
+    content: |
+      {
+        "Rules": [
+          {
+            "ID": "TempCleanup",
+            "Status": "Enabled",
+            "Filter": {
+              "Prefix": "temp/"
+            },
+            "Expiration": {
+              "Days": 3
+            }
+          },
+          {
+            "ID": "DocumentsRetention",
+            "Status": "Enabled",
+            "Filter": {
+              "Prefix": "documents/"
+            },
+            "Expiration": {
+              "Days": 90
+            }
+          }
+        ]
+      }
+
+  # Archive bucket - long-term retention
+  - name: "archive-lifecycle"
+    content: |
+      {
+        "Rules": [
+          {
+            "ID": "ArchiveRule",
+            "Status": "Enabled",
+            "Filter": {
+              "Prefix": "archive/"
+            },
+            "Expiration": {
+              "Days": 365
+            }
+          },
+          {
+            "ID": "BackupRule",
+            "Status": "Enabled",
+            "Filter": {
+              "Prefix": "backup/"
+            },
+            "Expiration": {
+              "Days": 180
+            }
+          }
+        ]
+      }
+
+  # Logs bucket - aggressive cleanup
+  - name: "logs-lifecycle"
+    content: |
+      {
+        "Rules": [
+          {
+            "ID": "ApplicationLogs",
+            "Status": "Enabled",
+            "Filter": {
+              "Prefix": "app/"
+            },
+            "Expiration": {
+              "Days": 7
+            }
+          },
+          {
+            "ID": "SystemLogs",
+            "Status": "Enabled",
+            "Filter": {
+              "Prefix": "system/"
+            },
+            "Expiration": {
+              "Days": 14
+            }
+          },
+          {
+            "ID": "DebugLogs",
+            "Status": "Enabled",
+            "Filter": {
+              "Prefix": "debug/"
+            },
+            "Expiration": {
+              "Days": 1
+            }
+          }
+        ]
+      }
+
+  # Standard bucket - original simple config
+  - name: "standard-lifecycle"
+    content: |
+      {
+        "Rules": [
+          {
+            "ID": "TempFilesRule",
+            "Status": "Enabled",
+            "Filter": {
+              "Prefix": "temp/"
+            },
+            "Expiration": {
+              "Days": 7
+            }
+          },
+          {
+            "ID": "LogsRule",
+            "Status": "Enabled",
+            "Filter": {
+              "Prefix": "logs/"
+            },
+            "Expiration": {
+              "Days": 30
+            }
+          }
+        ]
+      }
+
+# CronJob scheduling configuration
+cronJob:
+  # Run every 5 minutes for testing
+  schedule: "*/5 * * * *"
+  # Number of job history to retain
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  # Concurrency policy: Allow, Forbid, Replace
+  concurrencyPolicy: Forbid
+  # Job execution timeout in seconds - shorter for testing
+  activeDeadlineSeconds: 300
+  # Restart policy
+  restartPolicy: OnFailure
+
+# Resource limits for testing environment
+resources:
+  limits:
+    cpu: "200m"
+    memory: "128Mi"
+  requests:
+    cpu: "100m"
+    memory: "64Mi"
+
+# Additional environment variables (none needed for this test)
+envs: {}

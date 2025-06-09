@@ -88,10 +88,17 @@ test_create_secrets() {
 test_deploy_chart() {
     log_info "Deploying S3 Housekeeping chart..."
 
+    # Check if multi-bucket config should be used
+    local values_file="chart/tests/e2e/values-e2e-test.yaml"
+    if [[ "${USE_MULTI_BUCKET:-false}" == "true" ]]; then
+        values_file="chart/tests/e2e/values-multi-bucket-e2e.yaml"
+        log_info "Using multi-bucket configuration"
+    fi
+
     # Use the e2e test values
     if helm install s3-housekeeping-e2e ./chart \
         --namespace=${TEST_NAMESPACE} \
-        --values=chart/tests/e2e/values-e2e-test.yaml \
+        --values=${values_file} \
         --wait --timeout=5m; then
         log_success "S3 Housekeeping chart deployed successfully"
     else
@@ -99,13 +106,22 @@ test_deploy_chart() {
         return 1
     fi
 
-    # Verify CronJob is created
+    # Verify CronJobs are created
+    local expected_cronjobs=1
+    if [[ "${USE_MULTI_BUCKET:-false}" == "true" ]]; then
+        expected_cronjobs=4  # test-bucket-1, test-bucket-2, logs-bucket, my-bucket
+    fi
+
     local cronjob_count=$(kubectl get cronjobs -n ${TEST_NAMESPACE} --no-headers | wc -l)
-    if [[ $cronjob_count -eq 1 ]]; then
-        log_success "CronJob created successfully"
+    if [[ $cronjob_count -eq $expected_cronjobs ]]; then
+        log_success "$expected_cronjobs CronJob(s) created successfully"
+
+        # List the created CronJobs
+        log_info "Created CronJobs:"
+        kubectl get cronjobs -n ${TEST_NAMESPACE} --no-headers -o custom-columns=":metadata.name"
         return 0
     else
-        log_error "Expected 1 CronJob, found $cronjob_count"
+        log_error "Expected $expected_cronjobs CronJob(s), found $cronjob_count"
         return 1
     fi
 }
@@ -116,6 +132,9 @@ test_lifecycle_application() {
 
     # Get CronJob names
     local cronjobs=($(kubectl get cronjobs -n ${TEST_NAMESPACE} --no-headers -o custom-columns=":metadata.name"))
+    local expected_jobs=${#cronjobs[@]}
+
+    log_info "Found ${expected_jobs} CronJob(s) to trigger"
 
     for cronjob in "${cronjobs[@]}"; do
         log_info "Creating manual job from CronJob: $cronjob"
@@ -127,7 +146,7 @@ test_lifecycle_application() {
     done
 
     # Wait for jobs to complete with 5-minute timeout
-    log_info "Waiting for jobs to complete (timeout: 5 minutes)..."
+    log_info "Waiting for ${expected_jobs} job(s) to complete (timeout: 5 minutes)..."
 
     local completed_jobs=0
     local jobs=($(kubectl get jobs -n ${TEST_NAMESPACE} --no-headers -o custom-columns=":metadata.name"))
@@ -149,10 +168,11 @@ test_lifecycle_application() {
         fi
     done
 
-    if [[ $completed_jobs -eq 1 ]]; then
+    if [[ $completed_jobs -eq $expected_jobs ]]; then
+        log_success "All $expected_jobs job(s) completed successfully"
         return 0
     else
-        log_error "Only $completed_jobs out of 1 jobs completed successfully"
+        log_error "Only $completed_jobs out of $expected_jobs job(s) completed successfully"
         return 1
     fi
 }
@@ -161,56 +181,73 @@ test_lifecycle_application() {
 test_verify_lifecycle_configs() {
     log_info "Verifying lifecycle configurations using temporary pod..."
 
-    local bucket="my-bucket"
+    # Define buckets to check based on configuration
+    local buckets=("my-bucket")
+    if [[ "${USE_MULTI_BUCKET:-false}" == "true" ]]; then
+        buckets=("test-bucket-1" "test-bucket-2" "logs-bucket" "my-bucket")
+    fi
 
-    # Create temporary pod to check lifecycle configuration
-    log_info "Creating temporary debug pod..."
-    kubectl run debug-lifecycle-check --rm -i --tty \
-        --image=ghcr.io/sn0rt/utils:utils-v0.0.2 \
-        --env="AWS_ACCESS_KEY_ID=admin" \
-        --env="AWS_SECRET_ACCESS_KEY=password" \
-        --env="AWS_DEFAULT_REGION=us-east-1" \
-        --restart=Never \
-        --timeout=60s \
-        -- bash -c "
-            echo 'Configuring AWS CLI...'
-            aws configure set aws_access_key_id admin
-            aws configure set aws_secret_access_key password
-            aws configure set default.region us-east-1
+    local success_count=0
+    local total_buckets=${#buckets[@]}
 
-            echo 'Testing MinIO connection...'
-            aws s3 ls --endpoint-url http://minio.minio.svc.cluster.local:9000
+    for bucket in "${buckets[@]}"; do
+        log_info "Checking lifecycle configuration for bucket: $bucket"
 
-            echo 'Checking bucket ${bucket}...'
-            aws s3 ls s3://${bucket} --endpoint-url http://minio.minio.svc.cluster.local:9000
+        # Create temporary pod to check lifecycle configuration
+        if kubectl run debug-lifecycle-check-${bucket} --rm -i --tty \
+            --image=ghcr.io/sn0rt/utils:utils-v0.0.2 \
+            --env="AWS_ACCESS_KEY_ID=admin" \
+            --env="AWS_SECRET_ACCESS_KEY=password" \
+            --env="AWS_DEFAULT_REGION=us-east-1" \
+            --restart=Never \
+            --timeout=60s \
+            -- bash -c "
+                echo 'Configuring AWS CLI for bucket ${bucket}...'
+                aws configure set aws_access_key_id admin
+                aws configure set aws_secret_access_key password
+                aws configure set default.region us-east-1
 
-            echo 'Getting lifecycle configuration...'
-            lifecycle_config=\$(aws s3api get-bucket-lifecycle-configuration \
-                --bucket ${bucket} \
-                --endpoint-url http://minio.minio.svc.cluster.local:9000 2>/dev/null || echo 'null')
+                echo 'Testing MinIO connection...'
+                aws s3 ls --endpoint-url http://minio.minio.svc.cluster.local:9000
 
-            echo \"Retrieved config: \$lifecycle_config\"
+                echo 'Checking bucket ${bucket}...'
+                aws s3 ls s3://${bucket} --endpoint-url http://minio.minio.svc.cluster.local:9000
 
-            # Check if configuration exists and has enabled rules
-            if [[ \"\$lifecycle_config\" == \"null\" ]] || [[ \"\$lifecycle_config\" == \"\" ]]; then
-                echo 'ERROR: No lifecycle configuration found'
-                exit 1
-            elif echo \"\$lifecycle_config\" | grep -q '\"Rules\"' && echo \"\$lifecycle_config\" | grep -q '\"Status\".*\"Enabled\"'; then
-                echo 'SUCCESS: Lifecycle rules found and enabled'
-                echo \"\$lifecycle_config\"
-                exit 0
-            else
-                echo 'ERROR: Lifecycle configuration exists but no enabled rules found'
-                echo \"Current config: \$lifecycle_config\"
-                exit 1
-            fi
-        " && {
-        log_success "Bucket '$bucket' has active lifecycle rules"
+                echo 'Getting lifecycle configuration for ${bucket}...'
+                lifecycle_config=\$(aws s3api get-bucket-lifecycle-configuration \
+                    --bucket ${bucket} \
+                    --endpoint-url http://minio.minio.svc.cluster.local:9000 2>/dev/null || echo 'null')
+
+                echo \"Retrieved config for ${bucket}: \$lifecycle_config\"
+
+                # Check if configuration exists and has enabled rules
+                if [[ \"\$lifecycle_config\" == \"null\" ]] || [[ \"\$lifecycle_config\" == \"\" ]]; then
+                    echo 'ERROR: No lifecycle configuration found for ${bucket}'
+                    exit 1
+                elif echo \"\$lifecycle_config\" | grep -q '\"Rules\"' && echo \"\$lifecycle_config\" | grep -q '\"Status\".*\"Enabled\"'; then
+                    echo 'SUCCESS: Lifecycle rules found and enabled for ${bucket}'
+                    echo \"\$lifecycle_config\"
+                    exit 0
+                else
+                    echo 'ERROR: Lifecycle configuration exists but no enabled rules found for ${bucket}'
+                    echo \"Current config: \$lifecycle_config\"
+                    exit 1
+                fi
+            "; then
+            log_success "Bucket '$bucket' has active lifecycle rules"
+            success_count=$((success_count + 1))
+        else
+            log_error "Bucket '$bucket' has no active lifecycle rules or could not retrieve configuration"
+        fi
+    done
+
+    if [[ $success_count -eq $total_buckets ]]; then
+        log_success "All $total_buckets bucket(s) have active lifecycle rules"
         return 0
-    } || {
-        log_error "Bucket '$bucket' has no active lifecycle rules or could not retrieve configuration"
+    else
+        log_error "Only $success_count out of $total_buckets bucket(s) have active lifecycle rules"
         return 1
-    }
+    fi
 }
 
 # Test 5: Test configuration updates (idempotency)
@@ -219,6 +256,9 @@ test_idempotency() {
 
     # Run the jobs again to verify they detect no changes needed
     local cronjobs=($(kubectl get cronjobs -n ${TEST_NAMESPACE} --no-headers -o custom-columns=":metadata.name"))
+    local expected_jobs=${#cronjobs[@]}
+
+    log_info "Creating idempotency test jobs for ${expected_jobs} CronJob(s)..."
 
     for cronjob in "${cronjobs[@]}"; do
         # Create another manual job
@@ -228,7 +268,7 @@ test_idempotency() {
     done
 
     # Wait for idempotency jobs to complete with 5-minute timeout
-    log_info "Waiting for idempotency jobs to complete (timeout: 5 minutes)..."
+    log_info "Waiting for ${expected_jobs} idempotency job(s) to complete (timeout: 5 minutes)..."
 
     local idempotent_jobs=($(kubectl get jobs -n ${TEST_NAMESPACE} --no-headers -o custom-columns=":metadata.name" | grep idempotency))
     local success_count=0
@@ -244,11 +284,11 @@ test_idempotency() {
         fi
     done
 
-    if [[ $success_count -eq 1 ]]; then
-        log_success "Idempotency test passed"
+    if [[ $success_count -eq $expected_jobs ]]; then
+        log_success "All $expected_jobs idempotency test(s) passed"
         return 0
     else
-        log_error "Idempotency test failed: $success_count out of 1 jobs succeeded"
+        log_error "Idempotency test failed: $success_count out of $expected_jobs job(s) succeeded"
         return 1
     fi
 }
