@@ -1,0 +1,101 @@
+{{- range $index, $bucket := .Values.s3.buckets }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "s3-housekeeping.fullname" $ }}-{{ $bucket.name | replace "_" "-" | replace "." "-" | lower }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "s3-housekeeping.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $bucket.name | replace "_" "-" | replace "." "-" | lower }}
+    s3-housekeeping.io/bucket: {{ $bucket.name | quote }}
+spec:
+  schedule: "{{ $.Values.cronJob.schedule }}"
+  concurrencyPolicy: {{ $.Values.cronJob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ $.Values.cronJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $.Values.cronJob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "s3-housekeeping.selectorLabels" $ | nindent 12 }}
+            app.kubernetes.io/component: {{ $bucket.name | replace "_" "-" | replace "." "-" | lower }}
+            s3-housekeeping.io/bucket: {{ $bucket.name | quote }}
+        spec:
+          restartPolicy: {{ $.Values.cronJob.restartPolicy }}
+          containers:
+          - name: s3-housekeeping
+            image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+            imagePullPolicy: {{ $.Values.image.pullPolicy }}
+            command:
+            - /bin/bash
+            - -c
+            - |
+              # Execute single bucket script
+              chmod +x /scripts/s3-lifecycle-check-single.sh
+              /scripts/s3-lifecycle-check-single.sh "$@"
+            args:
+            - "{{ $bucket.lifecycleConfigName }}.json"
+            env:
+            # Static configuration (always from values)
+            - name: S3_BUCKET_NAME
+              value: {{ $bucket.name | quote }}
+            - name: S3_ENDPOINT
+              value: {{ $bucket.endpoint | quote }}
+            - name: S3_CA_BUNDLE
+              value: {{ $bucket.caBundle | default "" | quote }}
+
+            # AWS credentials (per-bucket, from Secret)
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $bucket.accessKeyId.secretName | quote }}
+                  key: {{ $bucket.accessKeyId.secretKey | quote }}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $bucket.secretAccessKey.secretName | quote }}
+                  key: {{ $bucket.secretAccessKey.secretKey | quote }}
+
+            # Common environment variables
+            {{- range $envName, $envConfig := $.Values.envs }}
+            - name: {{ $envName }}
+              {{- if kindOf $envConfig | eq "string" }}
+              value: {{ $envConfig | quote }}
+              {{- else if $envConfig.configMapName }}
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ $envConfig.configMapName | quote }}
+                  key: {{ $envConfig.configMapKey | quote }}
+              {{- else if $envConfig.secretName }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $envConfig.secretName | quote }}
+                  key: {{ $envConfig.secretKey | quote }}
+              {{- else if $envConfig.value }}
+              value: {{ $envConfig.value | quote }}
+              {{- end }}
+            {{- end }}
+            volumeMounts:
+            - name: script-volume
+              mountPath: /scripts
+              readOnly: true
+            - name: lifecycle-config-volume
+              mountPath: /lifecycle-configs
+              readOnly: true
+            {{- if $.Values.cronJob.activeDeadlineSeconds }}
+            activeDeadlineSeconds: {{ $.Values.cronJob.activeDeadlineSeconds }}
+            {{- end }}
+            resources:
+              {{- toYaml $.Values.resources | nindent 14 }}
+          volumes:
+          - name: script-volume
+            configMap:
+              name: {{ include "s3-housekeeping.fullname" $ }}-script
+              defaultMode: 0755
+          - name: lifecycle-config-volume
+            configMap:
+              name: {{ include "s3-housekeeping.fullname" $ }}-lifecycle-configs
+              defaultMode: 0644
+{{- end }}

@@ -1,0 +1,147 @@
+## S3 Housekeeping CronJob Configuration
+
+# CronJob scheduling configuration
+cronJob:
+  # Cron expression, runs every hour by default
+  schedule: "0 * * * *"
+  # Number of job history to retain
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  # Concurrency policy: Allow, Forbid, Replace
+  concurrencyPolicy: Forbid
+  # Job execution timeout in seconds
+  activeDeadlineSeconds: 3600
+  # Restart policy
+  restartPolicy: OnFailure
+
+# Container image configuration
+image:
+  repository: amazonlinux
+  tag: "2023.4.20240319.1"
+  pullPolicy: IfNotPresent
+
+# Resource limits
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Common environment variable configuration (from configmap)
+envs:
+  ACTIVE_CLUSTER:
+    configMapName: "cluster-cm"
+    configMapKey: "active_cluster"
+  CURRENT_CLUSTER:
+    configMapName: "cluster-cm"
+    configMapKey: "currentCluster"
+  IS_ACTIVE:
+    configMapName: "cluster-cm"
+    configMapKey: "isActive"
+  AWS_CA_BUNDLE:
+    value: "/etc/ssl/certs/ca-bundle.crt"
+
+# S3 configuration
+s3:
+  # List of buckets to monitor
+  buckets:
+    - name: "my-s3-bucket-1"
+      lifecycleConfigName: "bucket1-lifecycle"
+      # S3 credentials for this bucket
+      accessKeyId:
+        secretName: "s3-housekeeping-secret"
+        secretKey: "AWS_ACCESS_KEY_ID"
+      secretAccessKey:
+        secretName: "s3-housekeeping-secret"
+        secretKey: "AWS_SECRET_ACCESS_KEY"
+      # S3 endpoint for this bucket
+      endpoint: "https://s3.amazonaws.com"
+      # Optional: CA Bundle path for this bucket
+      # caBundle: "/path/to/ca-bundle.pem"
+    - name: "my-s3-bucket-2"
+      lifecycleConfigName: "archive-lifecycle"
+      # Different S3 credentials for this bucket
+      accessKeyId:
+        secretName: "s3-housekeeping-secret-2"
+        secretKey: "ACCESS_KEY"
+      secretAccessKey:
+        secretName: "s3-housekeeping-secret-2"
+        secretKey: "SECRET_KEY"
+      endpoint: "https://s3.amazonaws.com"
+    # Add more buckets as needed
+    # - name: "my-s3-bucket-3"
+    #   lifecycleConfigName: "backup-lifecycle"
+    #   accessKeyId:
+    #     secretName: "s3-housekeeping-secret-3"
+    #     secretKey: "aws_access_key_id"
+    #   secretAccessKey:
+    #     secretName: "s3-housekeeping-secret-3"
+    #     secretKey: "aws_secret_access_key"
+    #   endpoint: "https://custom-s3.example.com"
+    #   caBundle: "/path/to/ca-bundle.pem"
+
+# S3 lifecycle configuration
+s3LifecycleConfigs:
+  - name: "bucket1-lifecycle"
+    content: |
+      {
+        "Rules": [
+          {
+            "ID": "default-lifecycle",
+            "Status": "Enabled",
+            "Filter": {
+              "Prefix": ""
+            },
+            "Transitions": [
+              {
+                "Days": 30,
+                "StorageClass": "STANDARD_IA"
+              },
+              {
+                "Days": 90,
+                "StorageClass": "GLACIER"
+              },
+              {
+                "Days": 365,
+                "StorageClass": "DEEP_ARCHIVE"
+              }
+            ],
+            "Expiration": {
+              "Days": 2555
+            }
+          }
+        ]
+      }
+
+  - name: "archive-lifecycle"
+    content: |
+      {
+        "Rules": [
+          {
+            "ID": "archive-lifecycle",
+            "Status": "Enabled",
+            "Filter": {
+              "Prefix": ""
+            },
+            "Transitions": [
+              {
+                "Days": 30,
+                "StorageClass": "STANDARD_IA"
+              },
+              {
+                "Days": 90,
+                "StorageClass": "GLACIER"
+              },
+              {
+                "Days": 365,
+                "StorageClass": "DEEP_ARCHIVE"
+              }
+            ],
+            "Expiration": {
+              "Days": 2555
+            }
+          }
+        ]
+      }

@@ -1,0 +1,113 @@
+# Multi-bucket test configuration
+# Used to verify multi-bucket Helm chart functionality
+
+cronJob:
+  # Execute every 5 minutes for testing
+  schedule: "*/5 * * * *"
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  concurrencyPolicy: Forbid
+  activeDeadlineSeconds: 600  # 10 minutes timeout
+  restartPolicy: OnFailure
+
+image:
+  repository: amazonlinux
+  tag: "2023.4.20240319.1"
+  pullPolicy: IfNotPresent
+
+resources:
+  limits:
+    cpu: 300m
+    memory: 512Mi
+  requests:
+    cpu: 150m
+    memory: 256Mi
+
+# S3 multi-bucket test configuration
+s3:
+  buckets:
+    - name: "test-bucket-1"
+      lifecycleConfigName: "test-lifecycle-1"
+      accessKeyId:
+        secretName: "test-aws-credentials-1"
+        secretKey: "access-key-id"
+      secretAccessKey:
+        secretName: "test-aws-credentials-1"
+        secretKey: "secret-access-key"
+      endpoint: "https://s3.amazonaws.com"
+    - name: "test-bucket-2"
+      lifecycleConfigName: "test-lifecycle-2"
+      accessKeyId:
+        secretName: "test-aws-credentials-2"
+        secretKey: "AWS_ACCESS_KEY_ID"
+      secretAccessKey:
+        secretName: "test-aws-credentials-2"
+        secretKey: "AWS_SECRET_ACCESS_KEY"
+      endpoint: "https://s3.amazonaws.com"
+    - name: "test-bucket-3"
+      lifecycleConfigName: "archive-lifecycle"
+      accessKeyId:
+        secretName: "minio-credentials"
+        secretKey: "accesskey"
+      secretAccessKey:
+        secretName: "minio-credentials"
+        secretKey: "secretkey"
+      endpoint: "https://custom-s3.example.com"  # Custom endpoint for this bucket
+      caBundle: "/path/to/custom-ca.pem"  # Custom CA bundle for this bucket
+
+# Environment variable configuration
+envs:
+  ACTIVE_CLUSTER: "test"
+  CURRENT_CLUSTER: "test"
+  IS_ACTIVE: "true"
+
+# S3 lifecycle configurations for testing
+s3LifecycleConfigs:
+  - name: "test-lifecycle-1"
+    content: |
+      {
+        "Rules": [
+          {
+            "ID": "test-lifecycle-1",
+            "Status": "Enabled",
+            "Filter": {"Prefix": ""},
+            "Transitions": [
+              {"Days": 30, "StorageClass": "STANDARD_IA"},
+              {"Days": 90, "StorageClass": "GLACIER"}
+            ],
+            "Expiration": {"Days": 365}
+          }
+        ]
+      }
+  - name: "test-lifecycle-2"
+    content: |
+      {
+        "Rules": [
+          {
+            "ID": "test-lifecycle-2",
+            "Status": "Enabled",
+            "Filter": {"Prefix": "logs/"},
+            "Transitions": [
+              {"Days": 7, "StorageClass": "STANDARD_IA"},
+              {"Days": 30, "StorageClass": "GLACIER"}
+            ],
+            "Expiration": {"Days": 90}
+          }
+        ]
+      }
+  - name: "archive-lifecycle"
+    content: |
+      {
+        "Rules": [
+          {
+            "ID": "archive-lifecycle",
+            "Status": "Enabled",
+            "Filter": {"Prefix": "archive/"},
+            "Transitions": [
+              {"Days": 1, "StorageClass": "GLACIER"},
+              {"Days": 30, "StorageClass": "DEEP_ARCHIVE"}
+            ],
+            "Expiration": {"Days": 2555}
+          }
+        ]
+      }
