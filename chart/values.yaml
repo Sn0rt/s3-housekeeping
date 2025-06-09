@@ -1,5 +1,7 @@
 ## S3 Housekeeping CronJob Configuration
 
+debug: true
+
 # CronJob scheduling configuration
 cronJob:
   # Cron expression, runs every hour by default

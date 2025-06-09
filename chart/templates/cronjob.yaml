@@ -45,6 +45,8 @@ spec:
               value: {{ $bucket.endpoint | quote }}
             - name: S3_CA_BUNDLE
               value: {{ $bucket.caBundle | default "" | quote }}
+            - name: DEBUG
+              value: {{ $.Values.debug | default false | quote }}
 
             # AWS credentials (per-bucket, from Secret)
             - name: AWS_ACCESS_KEY_ID

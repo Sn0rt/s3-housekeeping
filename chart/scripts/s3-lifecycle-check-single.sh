@@ -6,6 +6,12 @@
 
 set -euo pipefail
 
+# Enable debug mode if DEBUG environment variable is set to true
+if [[ "${DEBUG:-false}" == "true" ]]; then
+    echo "🐛 DEBUG MODE ENABLED"
+    set -x  # Enable command tracing
+fi
+
 echo "Starting S3 Lifecycle Check for Single Bucket"
 echo "================================================"
 echo "Timestamp: $(date)"
@@ -43,6 +49,14 @@ echo "   Bucket: ${S3_BUCKET_NAME}"
 echo "   Lifecycle Config File: ${LIFECYCLE_CONFIG_FILE}"
 echo "   Endpoint: ${S3_ENDPOINT}"
 echo "   Access Key: ${AWS_ACCESS_KEY_ID:0:8}***"
+if [[ "${DEBUG:-false}" == "true" ]]; then
+    echo "   DEBUG MODE: ${DEBUG}"
+    echo "   AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}"
+    echo "   Script Arguments: $@"
+    echo "   PWD: $(pwd)"
+    echo "   Available files in /lifecycle-configs/:"
+    ls -la /lifecycle-configs/ 2>/dev/null || echo "   Directory not found"
+fi
 
 # Check cluster configuration
 if [[ -n "${ACTIVE_CLUSTER:-}" && -n "${CURRENT_CLUSTER:-}" && -n "${IS_ACTIVE:-}" ]]; then
@@ -74,6 +88,12 @@ echo ""
 aws_cli_opts=""
 if [[ -n "${S3_ENDPOINT}" && "${S3_ENDPOINT}" != "https://s3.amazonaws.com" ]]; then
     aws_cli_opts="--endpoint-url ${S3_ENDPOINT}"
+fi
+
+if [[ "${DEBUG:-false}" == "true" ]]; then
+    echo "🐛 DEBUG: AWS CLI options: ${aws_cli_opts}"
+    echo "🐛 DEBUG: AWS CLI version: $(aws --version 2>&1 || echo 'aws command not found')"
+    echo "🐛 DEBUG: Testing AWS CLI configuration..."
 fi
 
 echo "Testing bucket accessibility..."
@@ -126,6 +146,11 @@ if [[ "$current_config" != "null" && -n "$current_config" ]]; then
     normalized_current=$(echo "$current_config" | jq -S -c .)
 fi
 
+if [[ "${DEBUG:-false}" == "true" ]]; then
+    echo "🐛 DEBUG: Normalized expected config: $normalized_expected"
+    echo "🐛 DEBUG: Normalized current config: $normalized_current"
+fi
+
 # Compare configurations
 if [[ "$normalized_current" == "$normalized_expected" ]]; then
     echo "✅ Lifecycle configuration is up to date"
@@ -158,6 +183,12 @@ if [[ "$config_matches" != "true" ]]; then
     fi
 
     # Apply new configuration
+    if [[ "${DEBUG:-false}" == "true" ]]; then
+        echo "🐛 DEBUG: Executing command: aws s3api put-bucket-lifecycle-configuration --bucket ${S3_BUCKET_NAME} ${aws_cli_opts}"
+        echo "🐛 DEBUG: Configuration payload:"
+        echo "$expected_config" | jq .
+    fi
+
     if aws s3api put-bucket-lifecycle-configuration \
         --bucket "${S3_BUCKET_NAME}" \
         --lifecycle-configuration "$(echo "$expected_config")" \
