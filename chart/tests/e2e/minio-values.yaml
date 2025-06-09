@@ -1,0 +1,31 @@
+# MinIO configuration for E2E testing
+auth:
+  rootUser: "minioadmin"
+  rootPassword: "minioadmin123"
+
+# Pre-create test buckets
+defaultBuckets:
+  - "test-bucket-1"
+  - "test-bucket-2"
+  - "test-bucket-3"
+
+# Service configuration
+service:
+  type: NodePort
+
+# Disable persistence for testing
+persistence:
+  enabled: false
+
+# Resource configuration for testing
+resources:
+  requests:
+    memory: 128Mi
+    cpu: 100m
+  limits:
+    memory: 256Mi
+    cpu: 200m
+
+# Disable console for simpler setup
+consoleService:
+  type: ClusterIP
