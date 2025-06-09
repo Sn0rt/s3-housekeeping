@@ -2,6 +2,15 @@
 
 debug: true
 
+multiBucket: true
+
+# Container image configuration
+image:
+  repository: amazonlinux
+  tag: "2023.4.20240319.1"
+  pullPolicy: IfNotPresent
+
+
 # CronJob scheduling configuration
 cronJob:
   # Cron expression, runs every hour by default
@@ -16,12 +25,6 @@ cronJob:
   # Restart policy
   restartPolicy: OnFailure
 
-# Container image configuration
-image:
-  repository: amazonlinux
-  tag: "2023.4.20240319.1"
-  pullPolicy: IfNotPresent
-
 # Resource limits
 resources:
   limits:
@@ -31,19 +34,13 @@ resources:
     cpu: 100m
     memory: 128Mi
 
-# Common environment variable configuration (from configmap)
+# Additional environment variables (optional)
 envs:
-  ACTIVE_CLUSTER:
-    configMapName: "cluster-cm"
-    configMapKey: "active_cluster"
-  CURRENT_CLUSTER:
-    configMapName: "cluster-cm"
-    configMapKey: "currentCluster"
-  IS_ACTIVE:
-    configMapName: "cluster-cm"
-    configMapKey: "isActive"
-  AWS_CA_BUNDLE:
-    value: "/etc/ssl/certs/ca-bundle.crt"
+  # Example: AWS_CA_BUNDLE for custom CA certificates
+  # AWS_CA_BUNDLE:
+  #   value: "/etc/ssl/certs/ca-bundle.crt"
+  # LOG_LEVEL:
+  #   value: "INFO"
 
 # S3 configuration
 s3:

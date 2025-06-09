@@ -55,11 +55,8 @@ s3:
       endpoint: "https://custom-s3.example.com"  # Custom endpoint for this bucket
       caBundle: "/path/to/custom-ca.pem"  # Custom CA bundle for this bucket
 
-# Environment variable configuration
-envs:
-  ACTIVE_CLUSTER: "test"
-  CURRENT_CLUSTER: "test"
-  IS_ACTIVE: "true"
+# Additional environment variables (none needed for this test)
+envs: {}
 
 # S3 lifecycle configurations for testing
 s3LifecycleConfigs:

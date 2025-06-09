@@ -36,11 +36,8 @@ s3:
         secretKey: "AWS_SECRET_ACCESS_KEY"
       endpoint: "https://s3.amazonaws.com"
 
-# Environment variable configuration
-envs:
-  ACTIVE_CLUSTER: "test"
-  CURRENT_CLUSTER: "test"
-  IS_ACTIVE: "true"
+# Additional environment variables (none needed for basic test)
+envs: {}
 
 # S3 lifecycle configurations for testing
 s3LifecycleConfigs:

@@ -2,7 +2,7 @@
 
 # Script for checking S3 object lifecycle for a single bucket
 # This script is designed to be used with one bucket per CronJob
-# Usage: s3-lifecycle-check-single.sh <lifecycle-config-filename>
+# Usage: s3-lifecycle-check-single.sh <lifecycle-config-file-path>
 
 set -euo pipefail
 
@@ -17,15 +17,14 @@ echo "================================================"
 echo "Timestamp: $(date)"
 echo "Script Version: 1.0"
 
-# Check if lifecycle config filename is provided as argument
+# Check if lifecycle config file path is provided as argument
 if [[ $# -ne 1 ]]; then
-    echo -e "\033[31mError: Lifecycle config filename must be provided as argument\033[0m"
-    echo "Usage: $0 <lifecycle-config-filename>"
+    echo -e "\033[31mError: Lifecycle config file path must be provided as argument\033[0m"
+    echo "Usage: $0 <lifecycle-config-file-path>"
     exit 1
 fi
 
-LIFECYCLE_CONFIG_FILENAME="$1"
-LIFECYCLE_CONFIG_FILE="/lifecycle-configs/${LIFECYCLE_CONFIG_FILENAME}"
+LIFECYCLE_CONFIG_FILE="$1"
 
 # Check required environment variables
 required_vars=("S3_BUCKET_NAME" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "S3_ENDPOINT")
@@ -51,30 +50,13 @@ echo "   Endpoint: ${S3_ENDPOINT}"
 echo "   Access Key: ${AWS_ACCESS_KEY_ID:0:8}***"
 if [[ "${DEBUG:-false}" == "true" ]]; then
     echo "   DEBUG MODE: ${DEBUG}"
-    echo "   AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}"
     echo "   Script Arguments: $@"
     echo "   PWD: $(pwd)"
     echo "   Available files in /lifecycle-configs/:"
     ls -la /lifecycle-configs/ 2>/dev/null || echo "   Directory not found"
 fi
 
-# Check cluster configuration
-if [[ -n "${ACTIVE_CLUSTER:-}" && -n "${CURRENT_CLUSTER:-}" && -n "${IS_ACTIVE:-}" ]]; then
-    echo "   Active Cluster: ${ACTIVE_CLUSTER}"
-    echo "   Current Cluster: ${CURRENT_CLUSTER}"
-    echo "   Is Active: ${IS_ACTIVE}"
-
-    # Only proceed if this is the active cluster
-    if [[ "${IS_ACTIVE}" != "true" ]]; then
-        echo "Skipping execution - this is not the active cluster"
-        exit 0
-    fi
-else
-    echo "WARNING: Cluster information not provided - proceeding anyway"
-fi
-
-# Set default AWS region
-export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+# AWS region will be determined by AWS CLI default configuration or instance metadata
 
 # Configure bucket-specific CA Bundle if provided
 if [[ -n "${S3_CA_BUNDLE:-}" ]]; then

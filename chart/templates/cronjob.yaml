@@ -24,6 +24,32 @@ spec:
             s3-housekeeping.io/bucket: {{ $bucket.name | quote }}
         spec:
           restartPolicy: {{ $.Values.cronJob.restartPolicy }}
+          {{- if $.Values.multiBucket }}
+          initContainers:
+          - name: multi-cluster-delay
+            image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+            imagePullPolicy: {{ $.Values.image.pullPolicy }}
+            command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Multi-cluster deployment detected, applying random delay to avoid conflicts..."
+              # Generate random delay between 60-120 seconds
+              delay=$((60 + RANDOM % 61))
+              echo "Applying random delay: ${delay} seconds (range: 60-120s)"
+              echo "Bucket: {{ $bucket.name }}"
+              echo "Start time: $(date)"
+              sleep ${delay}
+              echo "Delay completed at: $(date)"
+              echo "Proceeding to main container..."
+            resources:
+              limits:
+                cpu: 50m
+                memory: 64Mi
+              requests:
+                cpu: 25m
+                memory: 32Mi
+          {{- end }}
           containers:
           - name: s3-housekeeping
             image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
@@ -36,7 +62,7 @@ spec:
               chmod +x /scripts/s3-lifecycle-check-single.sh
               /scripts/s3-lifecycle-check-single.sh "$@"
             args:
-            - "{{ $bucket.lifecycleConfigName }}.json"
+            - "/lifecycle-configs/{{ $bucket.lifecycleConfigName }}.json"
             env:
             # Static configuration (always from values)
             - name: S3_BUCKET_NAME
@@ -60,8 +86,9 @@ spec:
                   name: {{ $bucket.secretAccessKey.secretName | quote }}
                   key: {{ $bucket.secretAccessKey.secretKey | quote }}
 
-            # Common environment variables
+            # Additional environment variables (if any)
             {{- range $envName, $envConfig := $.Values.envs }}
+            {{- if not (has $envName (list "ACTIVE_CLUSTER" "CURRENT_CLUSTER" "IS_ACTIVE")) }}
             - name: {{ $envName }}
               {{- if kindOf $envConfig | eq "string" }}
               value: {{ $envConfig | quote }}
@@ -78,6 +105,7 @@ spec:
               {{- else if $envConfig.value }}
               value: {{ $envConfig.value | quote }}
               {{- end }}
+            {{- end }}
             {{- end }}
             volumeMounts:
             - name: script-volume
