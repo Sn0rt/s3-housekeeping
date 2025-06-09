@@ -13,8 +13,8 @@ image:
 
 # CronJob scheduling configuration
 cronJob:
-  # Cron expression, runs every hour by default
-  schedule: "0 * * * *"
+  # Cron expression, runs daily at 8 AM by default
+  schedule: "0 8 * * *"
   # Number of job history to retain
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1

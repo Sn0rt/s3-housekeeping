@@ -8,7 +8,7 @@ This Helm Chart deploys Kubernetes CronJobs to check whether objects in S3 bucke
 - 🔐 **Security**: Support for S3 credentials managed through configuration
 - 🌐 **Multi-Endpoint Support**: Support for custom S3 endpoints (MinIO, Ceph, etc.)
 - 📊 **Detailed Reporting**: Provide detailed check results and statistics
-- 🎯 **Cluster Awareness**: Support multi-cluster environments, distinguishing active and inactive clusters
+- ♻️ **Reentrant Script**: Safe to run multiple times without side effects
 - 🔧 **Highly Configurable**: Flexible configuration through values.yaml
 - 🚀 **Independent CronJobs**: Each bucket gets its own CronJob for better isolation and debugging
 
@@ -32,15 +32,11 @@ Each CronJob supports the following environment variables:
 | `S3_CA_BUNDLE` | CA certificate bundle path | Values (static) |
 | `AWS_ACCESS_KEY_ID` | AWS Access Key ID | Secret (per-bucket) |
 | `AWS_SECRET_ACCESS_KEY` | AWS Secret Access Key | Secret (per-bucket) |
-| `ACTIVE_CLUSTER` | Active cluster name | Configurable (envs) |
-| `CURRENT_CLUSTER` | Current cluster name | Configurable (envs) |
-| `IS_ACTIVE` | Whether this is the active cluster | Configurable (envs) |
 
 ### Environment Variable Sources
 
 - **Static variables**: Sourced from values.yaml configuration
 - **AWS credentials**: Per-bucket configuration from existing Secrets
-- **Common variables**: Flexible source configuration through `envs` section
 
 ## Quick Start
 
@@ -70,12 +66,6 @@ s3:
         secretKey: "secret-key"
       endpoint: "https://minio.example.com"
       caBundle: "/path/to/ca-bundle.pem"
-
-# Common environment variables
-envs:
-  ACTIVE_CLUSTER: "production"
-  CURRENT_CLUSTER: "production"
-  IS_ACTIVE: "true"
 
 cronJob:
   schedule: "0 2 * * *"  # Run at 2 AM daily
@@ -123,19 +113,6 @@ Each bucket in the `s3.buckets` array supports:
 | `endpoint` | S3 endpoint URL | ✅ |
 | `caBundle` | CA certificate bundle path | ❌ |
 
-### Common Environment Variables Configuration
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `envs.ACTIVE_CLUSTER` | Active cluster name | `"production"` |
-| `envs.CURRENT_CLUSTER` | Current cluster name | `"production"` |
-| `envs.IS_ACTIVE` | Whether this is the active cluster | `"true"` |
-
-Environment variables in `envs` can be configured with:
-- **Simple values**: `VARIABLE_NAME: "value"`
-- **ConfigMap reference**: `VARIABLE_NAME: {configMapName: "cm-name", configMapKey: "key"}`
-- **Secret reference**: `VARIABLE_NAME: {secretName: "secret-name", secretKey: "key"}`
-
 ## Usage Examples
 
 ### Multi-Bucket Configuration
@@ -176,15 +153,9 @@ s3:
         secretKey: "ceph_secret_key"
       endpoint: "https://ceph-s3.internal.com"
       caBundle: "/etc/ssl/certs/ceph-ca.pem"
-
-# Common environment variables
-envs:
-  ACTIVE_CLUSTER: "production"
-  CURRENT_CLUSTER: "production"
-  IS_ACTIVE: "true"
 ```
 
-### Using ConfigMap for Environment Variables
+### Simple Configuration Example
 
 ```yaml
 s3:
@@ -199,27 +170,10 @@ s3:
         secretKey: "AWS_SECRET_ACCESS_KEY"
       endpoint: "https://s3.amazonaws.com"
 
-# Environment variables from ConfigMap
-envs:
-  ACTIVE_CLUSTER:
-    configMapName: "cluster-config"
-    configMapKey: "active_cluster"
-  CURRENT_CLUSTER:
-    configMapName: "cluster-config"
-    configMapKey: "current_cluster"
-  IS_ACTIVE:
-    configMapName: "cluster-config"
-    configMapKey: "is_active"
-
-# Create the resources manually:
+# Create the credentials manually:
 # kubectl create secret generic aws-credentials \
 #   --from-literal=AWS_ACCESS_KEY_ID=AKIA... \
 #   --from-literal=AWS_SECRET_ACCESS_KEY=...
-#
-# kubectl create configmap cluster-config \
-#   --from-literal=active_cluster=production \
-#   --from-literal=current_cluster=us-west-2 \
-#   --from-literal=is_active=true
 ```
 
 ### Multi-Environment Deployment
