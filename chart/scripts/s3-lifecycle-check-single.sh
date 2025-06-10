@@ -83,9 +83,9 @@ fi
 echo ""
 
 # Configure AWS CLI for this bucket's endpoint
-aws_cli_opts=""
+aws_cli_opts="--no-verify-ssl"
 if [[ -n "${S3_ENDPOINT}" && "${S3_ENDPOINT}" != "https://s3.amazonaws.com" ]]; then
-    aws_cli_opts="--endpoint-url ${S3_ENDPOINT}"
+    aws_cli_opts=" --endpoint-url ${S3_ENDPOINT}"
 fi
 
 if [[ "${DEBUG:-false}" == "true" ]]; then

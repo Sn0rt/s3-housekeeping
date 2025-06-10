@@ -3,7 +3,7 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ include "s3-housekeeping.fullname" $ }}-{{ $bucket.name | replace "_" "-" | replace "." "-" | lower }}
+  name: {{ $bucket.name | replace "_" "-" | replace "." "-" | lower }}-{{ $.Release.Namespace }}
   namespace: {{ $.Release.Namespace }}
   labels:
     {{- include "s3-housekeeping.labels" $ | nindent 4 }}
@@ -33,19 +33,6 @@ spec:
             - /bin/bash
             - -c
             - |
-              echo "Multi-cluster deployment detected, applying random delay to avoid conflicts..."
-              # Generate random delay between 5-50 seconds
-              delay=$((5 + RANDOM % 46))
-              echo "Applying random delay: ${delay} seconds (range: 5-50s)"
-              echo "Bucket: {{ $bucket.name }}"
-              echo "Start time: $(date)"
-              sleep ${delay}
-              echo "Delay completed at: $(date)"
-              echo "Proceeding to main container..."
-            command:
-            - /bin/bash
-            - -c
-            - |
               echo "Checking required tools..."
               if ! command -v aws &> /dev/null; then
                 echo "Error: aws CLI not found"
@@ -56,6 +43,16 @@ spec:
                 exit 1
               fi
               echo "Required tools check passed"
+
+              echo "Multi-cluster deployment detected, applying random delay to avoid conflicts..."
+              # Generate random delay between 5-50 seconds
+              delay=$((5 + RANDOM % 46))
+              echo "Applying random delay: ${delay} seconds (range: 5-50s)"
+              echo "Bucket: {{ $bucket.name }}"
+              echo "Start time: $(date)"
+              sleep ${delay}
+              echo "Delay completed at: $(date)"
+              echo "Proceeding to main container..."
             resources:
               limits:
                 cpu: 50m
@@ -125,9 +122,6 @@ spec:
             - name: lifecycle-config-volume
               mountPath: /lifecycle-configs
               readOnly: true
-            {{- if $.Values.cronJob.activeDeadlineSeconds }}
-            activeDeadlineSeconds: {{ $.Values.cronJob.activeDeadlineSeconds }}
-            {{- end }}
             resources:
               {{- toYaml $.Values.resources | nindent 14 }}
           volumes:

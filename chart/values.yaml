@@ -20,8 +20,6 @@ cronJob:
   failedJobsHistoryLimit: 1
   # Concurrency policy: Allow, Forbid, Replace
   concurrencyPolicy: Forbid
-  # Job execution timeout in seconds
-  activeDeadlineSeconds: 3600
   # Restart policy
   restartPolicy: OnFailure
 
