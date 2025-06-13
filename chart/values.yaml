@@ -2,8 +2,6 @@
 
 debug: true
 
-multiBucket: true
-
 # Container image configuration
 image:
   repository: public.ecr.aws/lambda/python

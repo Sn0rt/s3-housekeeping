@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "s3-housekeeping.labels" . | nindent 4 }}
 data:
-  s3-lifecycle-check-single.sh: {{ .Files.Get "scripts/s3-lifecycle-check-single.sh" | quote }}
+  s3_lifecycle_manager.py: {{ .Files.Get "scripts/s3_lifecycle_manager.py" | quote }}
 ---
 {{- if .Values.s3LifecycleConfigs }}
 apiVersion: v1

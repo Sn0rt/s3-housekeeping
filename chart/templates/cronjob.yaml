@@ -24,8 +24,29 @@ spec:
             s3-housekeeping.io/bucket: {{ $bucket.name | quote }}
         spec:
           restartPolicy: {{ $.Values.cronJob.restartPolicy }}
-          {{- if $.Values.multiBucket }}
           initContainers:
+          - name: boto3-check
+            image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+            imagePullPolicy: {{ $.Values.image.pullPolicy }}
+            command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Checking boto3..."
+              if ! python3 -c "import boto3" 2>/dev/null; then
+                echo "boto3 not found, init container failed"
+                exit 1
+              else
+                echo "boto3 is already available, init container passed"
+              fi
+            resources:
+              limits:
+                cpu: 50m
+                memory: 64Mi
+              requests:
+                cpu: 25m
+                memory: 32Mi
+          {{- if gt (len $.Values.s3.buckets) 1 }}
           - name: multi-cluster-delay
             image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
             imagePullPolicy: {{ $.Values.image.pullPolicy }}
@@ -33,21 +54,6 @@ spec:
             - /bin/bash
             - -c
             - |
-              # Check or install boto3
-              if ! python3 -c "import boto3" 2>/dev/null; then
-                echo "boto3 not found, installing..."
-                pip3 install boto3
-                if ! python3 -c "import boto3" 2>/dev/null; then
-                  echo "Error: Failed to install boto3"
-                  exit 1
-                fi
-                echo "boto3 installed successfully"
-              else
-                echo "boto3 is already available"
-              fi
-
-              echo "Required tools check passed"
-
               echo "Multi-cluster deployment detected, applying random delay to avoid conflicts..."
               # Generate random delay between 5-50 seconds
               delay=$((5 + RANDOM % 46))
