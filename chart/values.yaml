@@ -6,8 +6,8 @@ multiBucket: true
 
 # Container image configuration
 image:
-  repository: ghcr.io/sn0rt/utils
-  tag: "utils-v0.0.2"
+  repository: public.ecr.aws/lambda/python
+  tag: "3.11"
   pullPolicy: IfNotPresent
 
 

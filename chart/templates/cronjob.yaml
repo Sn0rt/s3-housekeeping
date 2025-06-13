@@ -34,12 +34,12 @@ spec:
             - -c
             - |
               echo "Checking required tools..."
-              if ! command -v aws &> /dev/null; then
-                echo "Error: aws CLI not found"
+              if ! command -v python3 &> /dev/null; then
+                echo "Error: python3 not found"
                 exit 1
               fi
-              if ! command -v jq &> /dev/null; then
-                echo "Error: jq not found"
+              if ! command -v pip3 &> /dev/null; then
+                echo "Error: pip3 not found"
                 exit 1
               fi
               echo "Required tools check passed"
@@ -69,8 +69,14 @@ spec:
             - /bin/bash
             - -c
             - |
-              # Execute single bucket script
-              /scripts/s3-lifecycle-check-single.sh "/lifecycle-configs/{{ $bucket.lifecycleConfigName }}.json"
+              # Install boto3 if not present
+              if ! python3 -c "import boto3" 2>/dev/null; then
+                echo "Installing boto3..."
+                pip3 install boto3
+              fi
+
+              # Execute Python lifecycle manager
+              python3 /scripts/s3_lifecycle_manager.py apply "{{ $bucket.name }}" "/lifecycle-configs/{{ $bucket.lifecycleConfigName }}.json"
             env:
             # Static configuration (always from values)
             - name: S3_BUCKET_NAME
@@ -81,6 +87,10 @@ spec:
               value: {{ $bucket.caBundle | default "" | quote }}
             - name: DEBUG
               value: {{ $.Values.debug | default false | quote }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ $.Values.s3.region | default "" | quote }}
+            - name: AWS_VERIFY_SSL
+              value: {{ $.Values.s3.verifySSL | default false | quote }}
 
             # AWS credentials (per-bucket, from Secret)
             - name: AWS_ACCESS_KEY_ID
