@@ -79,12 +79,6 @@ spec:
             - /bin/bash
             - -c
             - |
-              # Install boto3 if not present
-              if ! python3 -c "import boto3" 2>/dev/null; then
-                echo "Installing boto3..."
-                pip3 install boto3
-              fi
-
               # Execute Python lifecycle manager
               python3 /scripts/s3_lifecycle_manager.py apply "{{ $bucket.name }}" "/lifecycle-configs/{{ $bucket.lifecycleConfigName }}.json"
             env:

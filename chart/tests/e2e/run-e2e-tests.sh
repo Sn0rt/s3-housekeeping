@@ -293,6 +293,39 @@ test_idempotency() {
     fi
 }
 
+# Test 6: Test multiple runs with conflicting configuration
+test_multiple_runs_with_existing_policies() {
+    log_info "Testing rule merging with conflicting configuration..."
+
+    local cronjob=$(kubectl get cronjobs -n ${TEST_NAMESPACE} --no-headers -o custom-columns=":metadata.name" | head -1)
+    local run_count=3
+    local success_count=0
+
+    for ((i=1; i<=run_count; i++)); do
+        log_info "Creating merge test job $i/$run_count"
+
+        local job_name="${cronjob}-merge-${i}-$(date +%s)"
+        kubectl create job "${job_name}" --from=cronjob/${cronjob} --namespace=${TEST_NAMESPACE}
+
+        if kubectl wait --for=condition=complete job/${job_name} -n ${TEST_NAMESPACE} --timeout=300s; then
+            log_success "Merge test job $i completed"
+            success_count=$((success_count + 1))
+        else
+            log_error "Merge test job $i failed"
+            kubectl logs job/${job_name} -n ${TEST_NAMESPACE} || true
+        fi
+    done
+
+
+    if [[ $success_count -eq $run_count ]]; then
+        log_success "All $run_count merge test jobs completed successfully"
+        return 0
+    else
+        log_error "Only $success_count out of $run_count merge test jobs succeeded"
+        return 1
+    fi
+}
+
 # Main test execution
 main() {
     echo "🚀 Starting S3 Housekeeping E2E Tests"
@@ -307,6 +340,7 @@ main() {
     run_test "Lifecycle Application" test_lifecycle_application
     run_test "Verify Lifecycle Configs" test_verify_lifecycle_configs
     run_test "Idempotency" test_idempotency
+    run_test "Multiple Runs with Existing Policies" test_multiple_runs_with_existing_policies
 
     # Summary
     echo ""
