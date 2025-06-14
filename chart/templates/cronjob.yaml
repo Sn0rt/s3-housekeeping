@@ -24,8 +24,29 @@ spec:
             s3-housekeeping.io/bucket: {{ $bucket.name | quote }}
         spec:
           restartPolicy: {{ $.Values.cronJob.restartPolicy }}
-          {{- if $.Values.multiBucket }}
           initContainers:
+          - name: boto3-check
+            image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+            imagePullPolicy: {{ $.Values.image.pullPolicy }}
+            command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Checking boto3..."
+              if ! python3 -c "import boto3" 2>/dev/null; then
+                echo "boto3 not found, init container failed"
+                exit 1
+              else
+                echo "boto3 is already available, init container passed"
+              fi
+            resources:
+              limits:
+                cpu: 50m
+                memory: 64Mi
+              requests:
+                cpu: 25m
+                memory: 32Mi
+          {{- if gt (len $.Values.s3.buckets) 1 }}
           - name: multi-cluster-delay
             image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
             imagePullPolicy: {{ $.Values.image.pullPolicy }}
@@ -33,17 +54,6 @@ spec:
             - /bin/bash
             - -c
             - |
-              echo "Checking required tools..."
-              if ! command -v aws &> /dev/null; then
-                echo "Error: aws CLI not found"
-                exit 1
-              fi
-              if ! command -v jq &> /dev/null; then
-                echo "Error: jq not found"
-                exit 1
-              fi
-              echo "Required tools check passed"
-
               echo "Multi-cluster deployment detected, applying random delay to avoid conflicts..."
               # Generate random delay between 5-50 seconds
               delay=$((5 + RANDOM % 46))
@@ -69,8 +79,8 @@ spec:
             - /bin/bash
             - -c
             - |
-              # Execute single bucket script
-              /scripts/s3-lifecycle-check-single.sh "/lifecycle-configs/{{ $bucket.lifecycleConfigName }}.json"
+              # Execute Python lifecycle manager
+              python3 /scripts/s3_lifecycle_manager.py apply "{{ $bucket.name }}" "/lifecycle-configs/{{ $bucket.lifecycleConfigName }}.json"
             env:
             # Static configuration (always from values)
             - name: S3_BUCKET_NAME
@@ -81,6 +91,10 @@ spec:
               value: {{ $bucket.caBundle | default "" | quote }}
             - name: DEBUG
               value: {{ $.Values.debug | default false | quote }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ $.Values.s3.region | default "" | quote }}
+            - name: AWS_VERIFY_SSL
+              value: {{ $.Values.s3.verifySSL | default false | quote }}
 
             # AWS credentials (per-bucket, from Secret)
             - name: AWS_ACCESS_KEY_ID
