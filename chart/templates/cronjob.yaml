@@ -46,18 +46,17 @@ spec:
               requests:
                 cpu: 25m
                 memory: 32Mi
-          {{- if gt (len $.Values.s3.buckets) 1 }}
-          - name: multi-cluster-delay
+          - name: startup-delay
             image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
             imagePullPolicy: {{ $.Values.image.pullPolicy }}
             command:
             - /bin/bash
             - -c
             - |
-              echo "Multi-cluster deployment detected, applying random delay to avoid conflicts..."
-              # Generate random delay between 5-50 seconds
-              delay=$((5 + RANDOM % 46))
-              echo "Applying random delay: ${delay} seconds (range: 5-50s)"
+              echo "Applying random startup delay to avoid conflicts..."
+              # Generate random delay between 1-150 seconds
+              delay=$((1 + RANDOM % 150))
+              echo "Applying random delay: ${delay} seconds (range: 1-150s)"
               echo "Bucket: {{ $bucket.name }}"
               echo "Start time: $(date)"
               sleep ${delay}
@@ -70,7 +69,6 @@ spec:
               requests:
                 cpu: 25m
                 memory: 32Mi
-          {{- end }}
           containers:
           - name: s3-housekeeping
             image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
