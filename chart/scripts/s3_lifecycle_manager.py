@@ -321,38 +321,7 @@ class S3LifecycleManager:
             self.logger.error(Colors.red(f"ERROR: Unexpected error applying lifecycle configuration: {e}"))
             return False
 
-    def test_bucket_access(self, bucket_name: str) -> bool:
-        """Test if bucket is accessible.
 
-        Args:
-            bucket_name: S3 bucket name
-
-        Returns:
-            True if accessible, False otherwise
-        """
-        try:
-            self.logger.debug(f"Testing access to bucket: {bucket_name}")
-            # Try to get lifecycle configuration to test bucket access
-            self.s3_client.get_bucket_lifecycle_configuration(Bucket=bucket_name)
-            self.logger.info(f"Bucket {bucket_name} is accessible")
-            return True
-
-        except ClientError as e:
-            error_code = e.response['Error']['Code']
-            # NoSuchLifecycleConfiguration is normal - bucket exists but has no lifecycle config
-            if error_code == 'NoSuchLifecycleConfiguration':
-                self.logger.info(f"Bucket {bucket_name} is accessible (no existing lifecycle configuration)")
-                return True
-            else:
-                self.logger.error(f"Cannot access bucket {bucket_name}: {error_code}")
-                self.logger.error("Please check:")
-                self.logger.error("- Bucket name is correct")
-                self.logger.error("- AWS credentials have proper permissions")
-                self.logger.error("- Network connectivity to S3 endpoint")
-                return False
-        except Exception as e:
-            self.logger.error(f"Unexpected error testing bucket access: {e}")
-            return False
 
     def load_config_file(self, config_file: str) -> Dict[str, Any]:
         """Load lifecycle configuration from file.
@@ -406,12 +375,6 @@ class S3LifecycleManager:
         self.logger.info(f"   Endpoint: {os.getenv('S3_ENDPOINT')}")
         self.logger.info(f"   Access Key: {os.getenv('AWS_ACCESS_KEY_ID', '')[:8]}***")
         self.logger.info(f"   Region: {os.getenv('AWS_DEFAULT_REGION') or 'default'}")
-
-        # Test bucket accessibility
-        self.logger.info("")
-        self.logger.info("Testing bucket accessibility...")
-        if not self.test_bucket_access(bucket_name):
-            return False
 
         # Load expected configuration
         self.logger.info("")
@@ -482,6 +445,14 @@ class S3LifecycleManager:
             self.logger.info("Verifying update...")
             try:
                 updated_config = self.get_current_lifecycle_config(bucket_name)
+
+                # Debug log: show the final effective configuration from S3
+                self.logger.debug("Final effective configuration from S3:")
+                if updated_config:
+                    self.logger.debug(json.dumps(updated_config, indent=2))
+                else:
+                    self.logger.debug("No lifecycle configuration found in S3")
+
                 if self._configs_equal(updated_config, merged_config):
                     self.logger.info(Colors.green("SUCCESS: Configuration update verified"))
                     config_updated = True
