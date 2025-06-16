@@ -3,7 +3,7 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ $bucket.name | replace "_" "-" | replace "." "-" | lower }}-{{ $.Release.Namespace }}
+  name: {{ $bucket.name | replace "_" "-" | replace "." "-" | lower }}
   namespace: {{ $.Release.Namespace }}
   labels:
     {{- include "s3-housekeeping.labels" $ | nindent 4 }}
