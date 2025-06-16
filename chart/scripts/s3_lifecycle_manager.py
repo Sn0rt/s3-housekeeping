@@ -418,6 +418,8 @@ class S3LifecycleManager:
         self.logger.info("Loading expected lifecycle configuration...")
         try:
             local_config = self.load_config_file(config_file)
+            self.logger.debug("Local configuration loaded:")
+            self.logger.debug(json.dumps(local_config, indent=2))
         except Exception:
             return False
 
@@ -426,6 +428,11 @@ class S3LifecycleManager:
         self.logger.info("Getting current lifecycle configuration...")
         try:
             remote_config = self.get_current_lifecycle_config(bucket_name)
+            if remote_config:
+                self.logger.debug("Remote configuration retrieved:")
+                self.logger.debug(json.dumps(remote_config, indent=2))
+            else:
+                self.logger.debug("No remote configuration found")
         except Exception:
             return False
 
@@ -433,6 +440,8 @@ class S3LifecycleManager:
         self.logger.info("")
         self.logger.info("Merging configurations...")
         merged_config = self.merge_lifecycle_configs(local_config, remote_config)
+        self.logger.debug("Final merged configuration:")
+        self.logger.debug(json.dumps(merged_config, indent=2))
 
         # Compare current with merged configuration
         if self._configs_equal(remote_config, merged_config):
@@ -739,6 +748,7 @@ Environment Variables:
   AWS_DEFAULT_REGION     - AWS region (optional)
   AWS_VERIFY_SSL         - Verify SSL certificates (default: false)
   S3_CA_BUNDLE          - Path to CA certificate bundle (optional)
+  DEBUG                  - Enable debug mode (true/false, default: false)
 
 Dependencies:
   pip install boto3
@@ -767,16 +777,24 @@ Dependencies:
         parser.print_help()
         sys.exit(1)
 
+    # Check for DEBUG environment variable if --debug flag is not set
+    debug_mode = args.debug
+    if not debug_mode:
+        debug_env = os.getenv('DEBUG', 'false').lower()
+        debug_mode = debug_env in ('true', '1', 'yes', 'on')
+        if debug_mode:
+            print("Debug mode enabled via DEBUG environment variable")
+
     try:
         if args.command == 'apply':
             # Create manager instance with AWS config
-            manager = S3LifecycleManager(debug=args.debug)
+            manager = S3LifecycleManager(debug=debug_mode)
             success = manager.apply_lifecycle_management(args.bucket_name, args.config_file)
             sys.exit(0 if success else 1)
 
         elif args.command == 'test':
             # Create manager instance without AWS config for testing
-            manager = S3LifecycleManager(debug=args.debug, skip_aws_config=True)
+            manager = S3LifecycleManager(debug=debug_mode, skip_aws_config=True)
             success = manager.run_tests()
             sys.exit(0 if success else 1)
 
@@ -785,7 +803,7 @@ Dependencies:
         sys.exit(1)
     except Exception as e:
         print(f"Unexpected error: {e}")
-        if args.debug:
+        if debug_mode:
             import traceback
             traceback.print_exc()
         sys.exit(1)
