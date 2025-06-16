@@ -33,6 +33,34 @@ except ImportError:
     sys.exit(1)
 
 
+class Colors:
+    """ANSI color codes for terminal output."""
+    RED = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    MAGENTA = '\033[95m'
+    CYAN = '\033[96m'
+    WHITE = '\033[97m'
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
+
+    @staticmethod
+    def red(text: str) -> str:
+        """Return text in red color."""
+        return f"{Colors.RED}{text}{Colors.RESET}"
+
+    @staticmethod
+    def green(text: str) -> str:
+        """Return text in green color."""
+        return f"{Colors.GREEN}{text}{Colors.RESET}"
+
+    @staticmethod
+    def yellow(text: str) -> str:
+        """Return text in yellow color."""
+        return f"{Colors.YELLOW}{text}{Colors.RESET}"
+
+
 class S3LifecycleManager:
     """Manages S3 bucket lifecycle configurations with intelligent merging."""
 
@@ -277,14 +305,14 @@ class S3LifecycleManager:
                 LifecycleConfiguration=config
             )
 
-            self.logger.info("✅ Lifecycle configuration updated successfully")
+            self.logger.info(Colors.green("SUCCESS: Lifecycle configuration updated successfully"))
             return True
 
         except ClientError as e:
-            self.logger.error(f"❌ Failed to update lifecycle configuration: {e}")
+            self.logger.error(Colors.red(f"ERROR: Failed to update lifecycle configuration: {e}"))
             return False
         except Exception as e:
-            self.logger.error(f"❌ Unexpected error applying lifecycle configuration: {e}")
+            self.logger.error(Colors.red(f"ERROR: Unexpected error applying lifecycle configuration: {e}"))
             return False
 
     def test_bucket_access(self, bucket_name: str) -> bool:
@@ -402,10 +430,10 @@ class S3LifecycleManager:
 
         # Compare current with merged configuration
         if self._configs_equal(remote_config, merged_config):
-            self.logger.info("✅ Lifecycle configuration is up to date (no changes needed after merge)")
+            self.logger.info(Colors.green("SUCCESS: Lifecycle configuration is up to date (no changes needed after merge)"))
             config_updated = False
         else:
-            self.logger.info("📋 Lifecycle configuration will be updated with merged rules")
+            self.logger.info("INFO: Lifecycle configuration will be updated with merged rules")
             self.logger.info("")
             self.logger.info("Merged configuration to apply:")
             self.logger.info(json.dumps(merged_config, indent=2))
@@ -440,13 +468,13 @@ class S3LifecycleManager:
             try:
                 updated_config = self.get_current_lifecycle_config(bucket_name)
                 if self._configs_equal(updated_config, merged_config):
-                    self.logger.info("✅ Configuration update verified")
+                    self.logger.info(Colors.green("SUCCESS: Configuration update verified"))
                     config_updated = True
                 else:
-                    self.logger.error("❌ Configuration update verification failed")
+                    self.logger.error(Colors.red("ERROR: Configuration update verification failed"))
                     return False
             except Exception:
-                self.logger.error("❌ Failed to verify configuration update")
+                self.logger.error(Colors.red("ERROR: Failed to verify configuration update"))
                 return False
 
         # Print summary
@@ -503,15 +531,15 @@ class S3LifecycleManager:
             try:
                 self.logger.info("")
                 if not test_case():
-                    self.logger.error(f"❌ Test Case {i} failed")
+                    self.logger.error(Colors.red(f"FAILED: Test Case {i} failed"))
                     return False
-                self.logger.info(f"✅ Test Case {i} passed")
+                self.logger.info(Colors.green(f"PASSED: Test Case {i} passed"))
             except Exception as e:
-                self.logger.error(f"❌ Test Case {i} failed with exception: {e}")
+                self.logger.error(Colors.red(f"FAILED: Test Case {i} failed with exception: {e}"))
                 return False
 
         self.logger.info("")
-        self.logger.info("All tests passed! 🎉")
+        self.logger.info(Colors.green("SUCCESS: All tests passed!"))
         self.logger.info("The merge functionality is working correctly.")
         return True
 
@@ -636,8 +664,8 @@ class S3LifecycleManager:
             self.logger.error("Remote-only rule was not preserved")
             return False
 
-        self.logger.info("✅ Local rule correctly overrode remote rule")
-        self.logger.info("✅ Remote-only rule was preserved")
+        self.logger.info(Colors.green("SUCCESS: Local rule correctly overrode remote rule"))
+        self.logger.info(Colors.green("SUCCESS: Remote-only rule was preserved"))
 
         return True
 
@@ -675,7 +703,7 @@ class S3LifecycleManager:
                 self.logger.error(f"Invalid configuration {i+1} was accepted")
                 return False
 
-        self.logger.info("✅ Configuration validation working correctly")
+        self.logger.info(Colors.green("SUCCESS: Configuration validation working correctly"))
         return True
 
 
