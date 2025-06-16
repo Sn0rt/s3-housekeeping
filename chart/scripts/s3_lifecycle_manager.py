@@ -13,8 +13,7 @@ Usage:
 Dependencies:
     pip install boto3
 
-Author: DevOps Team
-Version: 2.1 (Python with boto3)
+Version: 3.0 (Python with boto3)
 """
 
 import json
@@ -299,19 +298,24 @@ class S3LifecycleManager:
         """
         try:
             self.logger.debug(f"Testing access to bucket: {bucket_name}")
-            # Try to list objects (limit to 1 for efficiency)
-            self.s3_client.list_objects_v2(Bucket=bucket_name, MaxKeys=1)
+            # Try to get lifecycle configuration to test bucket access
+            self.s3_client.get_bucket_lifecycle_configuration(Bucket=bucket_name)
             self.logger.info(f"Bucket {bucket_name} is accessible")
             return True
 
         except ClientError as e:
             error_code = e.response['Error']['Code']
-            self.logger.error(f"Cannot access bucket {bucket_name}: {error_code}")
-            self.logger.error("Please check:")
-            self.logger.error("- Bucket name is correct")
-            self.logger.error("- AWS credentials have proper permissions")
-            self.logger.error("- Network connectivity to S3 endpoint")
-            return False
+            # NoSuchLifecycleConfiguration is normal - bucket exists but has no lifecycle config
+            if error_code == 'NoSuchLifecycleConfiguration':
+                self.logger.info(f"Bucket {bucket_name} is accessible (no existing lifecycle configuration)")
+                return True
+            else:
+                self.logger.error(f"Cannot access bucket {bucket_name}: {error_code}")
+                self.logger.error("Please check:")
+                self.logger.error("- Bucket name is correct")
+                self.logger.error("- AWS credentials have proper permissions")
+                self.logger.error("- Network connectivity to S3 endpoint")
+                return False
         except Exception as e:
             self.logger.error(f"Unexpected error testing bucket access: {e}")
             return False
