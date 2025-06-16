@@ -132,18 +132,24 @@ class S3LifecycleManager:
 
         # Add SSL verification settings (default: disabled)
         verify_ssl = os.getenv('AWS_VERIFY_SSL', 'false').lower() == 'true'
-        client_config['verify'] = verify_ssl
+        ca_bundle = os.getenv('S3_CA_BUNDLE')
 
         if not verify_ssl:
+            # SSL verification is disabled - always use False regardless of CA bundle
+            client_config['verify'] = False
             self.logger.debug("SSL verification is disabled (default)")
+            if ca_bundle:
+                self.logger.warning(f"S3_CA_BUNDLE is set ({ca_bundle}) but SSL verification is disabled - CA bundle will be ignored")
         else:
-            self.logger.info("SSL verification is enabled")
-
-        # Setup CA bundle if provided
-        ca_bundle = os.getenv('S3_CA_BUNDLE')
-        if ca_bundle:
-            client_config['verify'] = ca_bundle
-            self.logger.info(f"Using CA Bundle: {ca_bundle}")
+            # SSL verification is enabled
+            if ca_bundle:
+                # Use custom CA bundle for verification
+                client_config['verify'] = ca_bundle
+                self.logger.info(f"SSL verification is enabled with custom CA Bundle: {ca_bundle}")
+            else:
+                # Use default system CA certificates
+                client_config['verify'] = True
+                self.logger.info("SSL verification is enabled with system CA certificates")
 
         try:
             self.s3_client = boto3.client('s3', **client_config)
