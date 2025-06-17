@@ -22,7 +22,7 @@ import sys
 import argparse
 import logging
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any, Optional
 from pathlib import Path
 
 try:
@@ -38,12 +38,7 @@ class Colors:
     RED = '\033[91m'
     GREEN = '\033[92m'
     YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    MAGENTA = '\033[95m'
-    CYAN = '\033[96m'
-    WHITE = '\033[97m'
     RESET = '\033[0m'
-    BOLD = '\033[1m'
 
     @staticmethod
     def red(text: str) -> str:
@@ -221,9 +216,6 @@ class S3LifecycleManager:
             Merged configuration dictionary
         """
         self.logger.debug("Starting lifecycle configuration merge")
-        self.logger.debug(f"Local config: {json.dumps(local_config, indent=2)}")
-        self.logger.debug(f"Remote config: {json.dumps(remote_config, indent=2) if remote_config else 'None'}")
-
         # If remote config is None or empty, use local config entirely
         if not remote_config:
             self.logger.debug("No remote configuration found, using local configuration")
@@ -277,7 +269,6 @@ class S3LifecycleManager:
 
             # Remove ResponseMetadata and return only the configuration
             config = {k: v for k, v in response.items() if k != 'ResponseMetadata'}
-            self.logger.debug(f"Retrieved lifecycle configuration: {json.dumps(config, indent=2)}")
             return config
 
         except ClientError as e:
@@ -304,8 +295,6 @@ class S3LifecycleManager:
         """
         try:
             self.logger.debug(f"Applying lifecycle configuration to bucket: {bucket_name}")
-            self.logger.debug(f"Configuration payload: {json.dumps(config, indent=2)}")
-
             self.s3_client.put_bucket_lifecycle_configuration(
                 Bucket=bucket_name,
                 LifecycleConfiguration=config
@@ -320,8 +309,6 @@ class S3LifecycleManager:
         except Exception as e:
             self.logger.error(Colors.red(f"ERROR: Unexpected error applying lifecycle configuration: {e}"))
             return False
-
-
 
     def load_config_file(self, config_file: str) -> Dict[str, Any]:
         """Load lifecycle configuration from file.
@@ -381,8 +368,13 @@ class S3LifecycleManager:
         self.logger.info("Loading expected lifecycle configuration...")
         try:
             local_config = self.load_config_file(config_file)
-            self.logger.debug("Local configuration loaded:")
+            # 1. Show local policy file
+            self.logger.debug("")
+            self.logger.debug("=" * 50)
+            self.logger.debug("1. LOCAL POLICY FILE:")
+            self.logger.debug("=" * 50)
             self.logger.debug(json.dumps(local_config, indent=2))
+            self.logger.debug("=" * 50)
         except Exception:
             return False
 
@@ -391,11 +383,16 @@ class S3LifecycleManager:
         self.logger.info("Getting current lifecycle configuration...")
         try:
             remote_config = self.get_current_lifecycle_config(bucket_name)
+            # 2. Show remote policy file
+            self.logger.debug("")
+            self.logger.debug("=" * 50)
+            self.logger.debug("2. CURRENT REMOTE POLICY FILE:")
+            self.logger.debug("=" * 50)
             if remote_config:
-                self.logger.debug("Remote configuration retrieved:")
                 self.logger.debug(json.dumps(remote_config, indent=2))
             else:
                 self.logger.debug("No remote configuration found")
+            self.logger.debug("=" * 50)
         except Exception:
             return False
 
@@ -403,26 +400,20 @@ class S3LifecycleManager:
         self.logger.info("")
         self.logger.info("Merging configurations...")
         merged_config = self.merge_lifecycle_configs(local_config, remote_config)
-        self.logger.debug("Final merged configuration:")
+        # 3. Show merged policy file
+        self.logger.debug("")
+        self.logger.debug("=" * 50)
+        self.logger.debug("3. MERGED POLICY FILE:")
+        self.logger.debug("=" * 50)
         self.logger.debug(json.dumps(merged_config, indent=2))
+        self.logger.debug("=" * 50)
 
         # Compare current with merged configuration
+        config_updated = False
         if self._configs_equal(remote_config, merged_config):
             self.logger.info(Colors.green("SUCCESS: Lifecycle configuration is up to date (no changes needed after merge)"))
-            config_updated = False
         else:
             self.logger.info("INFO: Lifecycle configuration will be updated with merged rules")
-            self.logger.info("")
-            self.logger.info("Merged configuration to apply:")
-            self.logger.info(json.dumps(merged_config, indent=2))
-
-            if remote_config:
-                self.logger.info("")
-                self.logger.info("Current remote configuration:")
-                self.logger.info(json.dumps(remote_config, indent=2))
-            else:
-                self.logger.info("")
-                self.logger.info("Current remote configuration: No lifecycle configuration exists")
 
             # Create backup if current config exists
             if remote_config:
@@ -446,12 +437,16 @@ class S3LifecycleManager:
             try:
                 updated_config = self.get_current_lifecycle_config(bucket_name)
 
-                # Debug log: show the final effective configuration from S3
-                self.logger.debug("Final effective configuration from S3:")
+                # 4. Show current effective configuration after update
+                self.logger.debug("")
+                self.logger.debug("=" * 50)
+                self.logger.debug("4. CURRENT EFFECTIVE POLICY AFTER UPDATE:")
+                self.logger.debug("=" * 50)
                 if updated_config:
                     self.logger.debug(json.dumps(updated_config, indent=2))
                 else:
                     self.logger.debug("No lifecycle configuration found in S3")
+                self.logger.debug("=" * 50)
 
                 if self._configs_equal(updated_config, merged_config):
                     self.logger.info(Colors.green("SUCCESS: Configuration update verified"))
@@ -584,9 +579,6 @@ class S3LifecycleManager:
             ]
         }
 
-        self.logger.info(f"Local config: {json.dumps(local_config)}")
-        self.logger.info(f"Remote config: {json.dumps(remote_config)}")
-
         result = self.merge_lifecycle_configs(local_config, remote_config)
         self.logger.info("Merged result:")
         self.logger.info(json.dumps(result, indent=2))
@@ -630,9 +622,6 @@ class S3LifecycleManager:
                 }
             ]
         }
-
-        self.logger.info(f"Local config: {json.dumps(local_config)}")
-        self.logger.info(f"Remote config: {json.dumps(remote_config)}")
 
         result = self.merge_lifecycle_configs(local_config, remote_config)
         self.logger.info("Merged result:")
