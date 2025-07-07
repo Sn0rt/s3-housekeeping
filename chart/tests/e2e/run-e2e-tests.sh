@@ -194,7 +194,7 @@ test_verify_lifecycle_configs() {
         log_info "Checking lifecycle configuration for bucket: $bucket"
 
         # Create temporary pod to check lifecycle configuration
-        if kubectl run debug-lifecycle-check-${bucket} --rm -i --tty \
+        if kubectl run debug-lifecycle-check-${bucket} --rm -i \
             --image=ghcr.io/sn0rt/utils:utils-v0.0.2 \
             --env="AWS_ACCESS_KEY_ID=admin" \
             --env="AWS_SECRET_ACCESS_KEY=password" \

@@ -23,7 +23,6 @@ import argparse
 import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
-from pathlib import Path
 
 try:
     import boto3
@@ -88,6 +87,15 @@ class S3LifecycleManager:
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
+
+        # Enable boto3/botocore HTTP request logging when debug is enabled
+        if self.debug:
+            # Enable detailed boto3 logging to see HTTP requests/responses
+            boto3.set_stream_logger('boto3', logging.DEBUG)
+            boto3.set_stream_logger('botocore', logging.DEBUG)
+            # Enable HTTP wire logging (shows actual HTTP requests/responses including headers)
+            boto3.set_stream_logger('urllib3.connectionpool', logging.DEBUG)
+            logger.debug("Enabled boto3 HTTP request logging")
 
         return logger
 
@@ -295,6 +303,7 @@ class S3LifecycleManager:
         """
         try:
             self.logger.debug(f"Applying lifecycle configuration to bucket: {bucket_name}")
+
             self.s3_client.put_bucket_lifecycle_configuration(
                 Bucket=bucket_name,
                 LifecycleConfiguration=config

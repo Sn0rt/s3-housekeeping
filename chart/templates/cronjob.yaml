@@ -32,12 +32,25 @@ spec:
             - /bin/bash
             - -c
             - |
-              echo "Checking boto3..."
-              if ! python3 -c "import boto3" 2>/dev/null; then
-                echo "boto3 not found, init container failed"
+              echo "Checking boto3 version..."
+              if ! python3 -c "
+              import boto3
+              current_version = boto3.__version__.split('.')
+              max_version = '1.36.0'.split('.')
+
+              # Convert version parts to integers for comparison
+              current = [int(x) for x in current_version[:3]]
+              maximum = [int(x) for x in max_version[:3]]
+
+              print(f'boto3 version: {boto3.__version__}')
+              if current >= maximum:
+                  print(f'Error: boto3 version {boto3.__version__} is greater than or equal to version 1.36.0 (not supported)')
+                  exit(1)
+              " 2>/dev/null; then
+                echo "boto3 version check failed"
                 exit 1
               else
-                echo "boto3 is already available, init container passed"
+                echo "boto3 version check completed successfully"
               fi
             resources:
               limits:

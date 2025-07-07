@@ -6,8 +6,8 @@ debug: true
 
 # Container image configuration
 image:
-  repository: public.ecr.aws/lambda/python
-  tag: "3.11"
+  repository: ghcr.io/sn0rt/utils
+  tag: "utils-v0.0.3"
   pullPolicy: IfNotPresent
 
 # S3 buckets configuration for testing

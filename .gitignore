@@ -74,3 +74,4 @@ hack/test/http-client.private.env.json
 .devcontainer/devcontainer.env
 hack/config.toml
 .cursorrules
+.venv/
