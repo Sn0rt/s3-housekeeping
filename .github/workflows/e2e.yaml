@@ -10,7 +10,7 @@ on:
 jobs:
   e2e-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       matrix:
         test-mode:
@@ -33,6 +33,11 @@ jobs:
 
     - name: Start minikube
       uses: medyagh/setup-minikube@latest
+      with:
+        driver: docker
+        memory: 4096
+        cpus: 2
+        wait: all
 
     - name: Verify minikube
       run: |

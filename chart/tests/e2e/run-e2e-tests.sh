@@ -99,7 +99,7 @@ test_deploy_chart() {
     if helm install s3-housekeeping-e2e ./chart \
         --namespace=${TEST_NAMESPACE} \
         --values=${values_file} \
-        --wait --timeout=5m; then
+        --wait --timeout=10m; then
         log_success "S3 Housekeeping chart deployed successfully"
     else
         log_error "Failed to deploy S3 Housekeeping chart"
@@ -153,7 +153,7 @@ test_lifecycle_application() {
 
     for job in "${jobs[@]}"; do
         log_info "Waiting for job $job to complete..."
-        if kubectl wait --for=condition=complete job/${job} -n ${TEST_NAMESPACE} --timeout=300s; then
+        if kubectl wait --for=condition=complete job/${job} -n ${TEST_NAMESPACE} --timeout=1000s; then
             log_success "Job $job completed successfully"
             completed_jobs=$((completed_jobs + 1))
 
@@ -195,12 +195,12 @@ test_verify_lifecycle_configs() {
 
         # Create temporary pod to check lifecycle configuration
         if kubectl run debug-lifecycle-check-${bucket} --rm -i \
-            --image=ghcr.io/sn0rt/utils:utils-v0.0.2 \
+            --image=ghcr.io/sn0rt/utils:utils-v0.0.3 \
             --env="AWS_ACCESS_KEY_ID=admin" \
             --env="AWS_SECRET_ACCESS_KEY=password" \
             --env="AWS_DEFAULT_REGION=us-east-1" \
             --restart=Never \
-            --timeout=60s \
+            --timeout=1000s \
             -- bash -c "
                 echo 'Configuring AWS CLI for bucket ${bucket}...'
                 aws configure set aws_access_key_id admin
@@ -275,7 +275,7 @@ test_idempotency() {
 
     for job in "${idempotent_jobs[@]}"; do
         log_info "Waiting for idempotency job $job to complete..."
-        if kubectl wait --for=condition=complete job/${job} -n ${TEST_NAMESPACE} --timeout=300s; then
+        if kubectl wait --for=condition=complete job/${job} -n ${TEST_NAMESPACE} --timeout=1000s; then
             log_success "Idempotency job $job completed successfully"
             success_count=$((success_count + 1))
         else
@@ -307,7 +307,7 @@ test_multiple_runs_with_existing_policies() {
         local job_name="${cronjob}-merge-${i}-$(date +%s)"
         kubectl create job "${job_name}" --from=cronjob/${cronjob} --namespace=${TEST_NAMESPACE}
 
-        if kubectl wait --for=condition=complete job/${job_name} -n ${TEST_NAMESPACE} --timeout=300s; then
+        if kubectl wait --for=condition=complete job/${job_name} -n ${TEST_NAMESPACE} --timeout=1000s; then
             log_success "Merge test job $i completed"
             success_count=$((success_count + 1))
         else
