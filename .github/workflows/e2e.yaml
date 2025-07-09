@@ -2,9 +2,9 @@ name: E2E Tests
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -25,85 +25,84 @@ jobs:
     name: E2E Tests (${{ matrix.test-mode.name }})
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Setup Helm
-      uses: azure/setup-helm@v4
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
 
-    - name: Start minikube
-      uses: medyagh/setup-minikube@latest
-      with:
-        driver: docker
-        memory: 4096
-        cpus: 2
-        wait: all
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: s3-housekeeping-e2e
 
-    - name: Verify minikube
-      run: |
-        kubectl cluster-info
-        kubectl get pods -A
+      - name: Verify kind cluster
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+          kubectl get pods -A
 
-    - name: Deploy MinIO
-      run: |
-        # Create namespace
-        kubectl create namespace minio || true
+      - name: Deploy MinIO
+        run: |
+          # Create namespace
+          kubectl create namespace minio || true
 
-        # Deploy MinIO using direct YAML (supports multiple buckets)
-        kubectl apply -f chart/tests/e2e/minio.yaml -n minio
+          # Deploy MinIO using direct YAML (supports multiple buckets)
+          kubectl apply -f chart/tests/e2e/minio.yaml -n minio
 
-        # Wait for deployment to be ready
-        kubectl wait --for=condition=available deployment/minio -n minio --timeout=300s
+          # Wait for deployment to be ready
+          kubectl wait --for=condition=available deployment/minio -n minio --timeout=300s
 
-    - name: Wait for MinIO to be ready
-      run: |
-        kubectl wait --for=condition=ready pod -l app=minio -n minio --timeout=300s
-        kubectl get pods -n minio
+      - name: Wait for MinIO to be ready
+        run: |
+          kubectl wait --for=condition=ready pod -l app=minio -n minio --timeout=300s
+          kubectl get pods -n minio
 
-    - name: Run E2E tests (${{ matrix.test-mode.name }})
-      run: |
-        # Set test mode
-        export USE_MULTI_BUCKET=${{ matrix.test-mode.use_multi_bucket }}
-        export SKIP_OBJECT_LISTING=true  # Enable performance optimization for CI
+      - name: Run E2E tests (${{ matrix.test-mode.name }})
+        run: |
+          # Set test mode
+          export USE_MULTI_BUCKET=${{ matrix.test-mode.use_multi_bucket }}
+          export SKIP_OBJECT_LISTING=true  # Enable performance optimization for CI
 
-        chmod +x chart/tests/e2e/run-e2e-tests.sh
+          chmod +x chart/tests/e2e/run-e2e-tests.sh
 
-        echo "🚀 Running ${{ matrix.test-mode.name }} E2E Tests"
-        echo "Description: ${{ matrix.test-mode.description }}"
-        echo "USE_MULTI_BUCKET=${USE_MULTI_BUCKET}"
-        echo ""
+          echo "🚀 Running ${{ matrix.test-mode.name }} E2E Tests"
+          echo "Description: ${{ matrix.test-mode.description }}"
+          echo "USE_MULTI_BUCKET=${USE_MULTI_BUCKET}"
+          echo ""
 
-        chart/tests/e2e/run-e2e-tests.sh
+          chart/tests/e2e/run-e2e-tests.sh
 
-    - name: Collect logs on failure
-      if: failure()
-      run: |
-        echo "=== Test Configuration ==="
-        echo "Test Mode: ${{ matrix.test-mode.name }}"
-        echo "USE_MULTI_BUCKET: ${{ matrix.test-mode.use_multi_bucket }}"
-        echo ""
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== Test Configuration ==="
+          echo "Test Mode: ${{ matrix.test-mode.name }}"
+          echo "USE_MULTI_BUCKET: ${{ matrix.test-mode.use_multi_bucket }}"
+          echo ""
 
-        echo "=== MinIO Service ==="
-        minikube service list
-        minikube service minio -n minio --url || echo "MinIO service not accessible"
+          echo "=== MinIO Service ==="
+          kubectl get services -n minio
+          kubectl port-forward -n minio svc/minio 9000:9000 &
+          echo "MinIO accessible at localhost:9000"
 
-        echo "=== MinIO Logs ==="
-        kubectl logs -n minio -l app=minio --tail=100
+          echo "=== MinIO Logs ==="
+          kubectl logs -n minio -l app=minio --tail=100
 
-        echo "=== S3 Housekeeping CronJobs ==="
-        kubectl get cronjobs -n s3-housekeeping-e2e -o wide || echo "No cronjobs found"
+          echo "=== S3 Housekeeping CronJobs ==="
+          kubectl get cronjobs -n s3-housekeeping-e2e -o wide || echo "No cronjobs found"
 
-        echo "=== S3 Housekeeping Jobs ==="
-        kubectl get jobs -n s3-housekeeping-e2e -o wide || echo "No jobs found"
+          echo "=== S3 Housekeeping Jobs ==="
+          kubectl get jobs -n s3-housekeeping-e2e -o wide || echo "No jobs found"
 
-        echo "=== S3 Housekeeping Logs ==="
-        kubectl logs -n s3-housekeeping-e2e -l app.kubernetes.io/name=s3-housekeeping --tail=100 || echo "No s3-housekeeping pods found"
+          echo "=== S3 Housekeeping Logs ==="
+          kubectl logs -n s3-housekeeping-e2e -l app.kubernetes.io/name=s3-housekeeping --tail=100 || echo "No s3-housekeeping pods found"
 
-        echo "=== All Pods ==="
-        kubectl get pods -A
+          echo "=== All Pods ==="
+          kubectl get pods -A
 
-        echo "=== ConfigMaps ==="
-        kubectl get configmaps -n s3-housekeeping-e2e || echo "No configmaps found"
+          echo "=== ConfigMaps ==="
+          kubectl get configmaps -n s3-housekeeping-e2e || echo "No configmaps found"
 
-        echo "=== Events ==="
-        kubectl get events --sort-by=.metadata.creationTimestamp
+          echo "=== Events ==="
+          kubectl get events --sort-by=.metadata.creationTimestamp
